@@ -30,12 +30,12 @@ That's it. No windows to open, no apps to switch to.
 
 ## Install
 
-Download the latest `.dmg` from [Releases](https://github.com/user/vaak/releases), open it, and drag Vaak to Applications.
+Download the latest `.dmg` from [Releases](https://github.com/narpatsinghpurohit/vaak/releases), open it, and drag Vaak to Applications.
 
 Or build from source:
 
 ```bash
-git clone https://github.com/user/vaak.git
+git clone https://github.com/narpatsinghpurohit/vaak.git
 cd vaak
 yarn install
 npx electron-rebuild -f -w better-sqlite3
