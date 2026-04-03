@@ -95,6 +95,19 @@ src/
 - **Cloud mode**: Audio is sent to the API endpoint you configure (Groq, OpenAI, etc.). Review their privacy policies.
 - **History**: Stored in a local SQLite database in your app data directory. You can clear it anytime from the history popup.
 
+## Platform support
+
+| Platform | Status |
+|----------|--------|
+| macOS (Apple Silicon) | Supported |
+| macOS (Intel) | Untested — should work |
+| Linux | Planned — contributors welcome |
+| Windows | Planned — contributors welcome |
+
+## Contributing
+
+We'd love your help — especially for **Linux and Windows support**. See [CONTRIBUTING.md](CONTRIBUTING.md) for architecture details, platform-specific guidance, and how to get started.
+
 ## License
 
 [MIT](LICENSE) — Narpat Singh, 2026.
