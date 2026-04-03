@@ -1,6 +1,6 @@
 {
   "name": "vaak",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Vaak — voice to clipboard, instantly",
   "main": "dist/main/index.js",
   "scripts": {
@@ -12,10 +12,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^11.7.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "smart-whisper": "^0.3.0",
-    "zustand": "^5.0.0"
+    "smart-whisper": "^0.3.0"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.3",
@@ -26,8 +23,11 @@
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
     "typescript": "^5.7.0",
-    "vite": "^5.4.0"
+    "vite": "^5.4.0",
+    "zustand": "^5.0.0"
   },
   "build": {
     "appId": "com.vaak.app",
@@ -39,8 +39,7 @@
     },
     "files": [
       "dist/**/*",
-      "assets/**/*",
-      "node_modules/**/*"
+      "assets/**/*"
     ],
     "asarUnpack": [
       "node_modules/smart-whisper/**",
