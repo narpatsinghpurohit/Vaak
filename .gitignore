@@ -1,0 +1,23 @@
+node_modules/
+dist/
+out/
+release/
+
+# IDE
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+
+# Environment
+.env
+.env.*
+
+# Logs
+*.log
+
+# Electron builder output
+*.dmg
+*.zip
+*.blockmap
