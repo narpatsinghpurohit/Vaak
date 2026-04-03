@@ -11,6 +11,7 @@ interface Settings {
   language: string;
   hotkey: string;
   historyHotkey: string;
+  autoPaste: boolean;
 }
 
 interface HistoryEntry {
@@ -59,6 +60,8 @@ interface VoicePasteApi {
   cancelDownload: (filename: string) => Promise<{ status: string }>;
   deleteModel: (filename: string) => Promise<{ status: string }>;
   getModelProgress: (filename: string) => Promise<any>;
+  checkAccessibility: () => Promise<boolean>;
+  requestAccessibility: () => Promise<boolean>;
   onDownloadProgress: (callback: (data: DownloadProgress) => void) => () => void;
   onDownloadComplete: (callback: (data: { filename: string }) => void) => () => void;
   onDownloadError: (callback: (data: { filename: string; error: string }) => void) => () => void;

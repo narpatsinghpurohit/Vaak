@@ -20,6 +20,10 @@ const api = {
   deleteModel: (filename: string) => ipcRenderer.invoke("models:delete", filename),
   getModelProgress: (filename: string) => ipcRenderer.invoke("models:getProgress", filename),
 
+  // Accessibility (for auto-paste)
+  checkAccessibility: () => ipcRenderer.invoke("accessibility:check") as Promise<boolean>,
+  requestAccessibility: () => ipcRenderer.invoke("accessibility:request") as Promise<boolean>,
+
   // Events from main
   onDownloadProgress: (callback: (data: any) => void) => {
     const handler = (_e: any, data: any) => callback(data);

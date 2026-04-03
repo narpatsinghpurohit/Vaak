@@ -1,5 +1,38 @@
 import React from "react";
 
+/** Convert a keyboard event into an Electron accelerator string */
+function buildCombo(e: React.KeyboardEvent): string | null {
+  // Ignore lone modifier keys
+  if (["Control", "Shift", "Alt", "Meta"].includes(e.key)) return null;
+
+  const parts: string[] = [];
+  if (e.ctrlKey || e.metaKey) parts.push("CommandOrControl");
+  if (e.shiftKey) parts.push("Shift");
+  if (e.altKey) parts.push("Alt");
+
+  // Need at least one modifier
+  if (parts.length === 0) return null;
+
+  // Map special keys to Electron accelerator names
+  const keyMap: Record<string, string> = {
+    " ": "Space",
+    ArrowUp: "Up",
+    ArrowDown: "Down",
+    ArrowLeft: "Left",
+    ArrowRight: "Right",
+    Escape: "Escape",
+    Enter: "Return",
+    Backspace: "Backspace",
+    Delete: "Delete",
+    Tab: "Tab",
+  };
+
+  const key = keyMap[e.key] || (e.key.length === 1 ? e.key.toUpperCase() : e.key);
+  parts.push(key);
+
+  return parts.join("+");
+}
+
 interface ModelRowProps {
   model: ModelStatus;
   isActive: boolean;
@@ -202,10 +235,60 @@ export function SettingsView({
 
       {/* Hotkeys */}
       <div className="section">
-        <label>Hotkeys</label>
-        <div style={{ color: "var(--fg-muted)" }}>
-          <strong>{settings.hotkey}</strong> — Record/Stop &nbsp;{" "}
-          <strong>{settings.historyHotkey}</strong> — History
+        <label>Record / Stop Hotkey</label>
+        <input
+          readOnly
+          value={settings.hotkey}
+          onKeyDown={(e) => {
+            e.preventDefault();
+            const combo = buildCombo(e);
+            if (combo) onFieldChange((s) => ({ ...s, hotkey: combo }));
+          }}
+          placeholder="Press a key combination..."
+          style={{ cursor: "pointer" }}
+        />
+        <div className="hint">Click and press your desired key combination</div>
+      </div>
+
+      <div className="section">
+        <label>History Hotkey</label>
+        <input
+          readOnly
+          value={settings.historyHotkey}
+          onKeyDown={(e) => {
+            e.preventDefault();
+            const combo = buildCombo(e);
+            if (combo) onFieldChange((s) => ({ ...s, historyHotkey: combo }));
+          }}
+          placeholder="Press a key combination..."
+          style={{ cursor: "pointer" }}
+        />
+      </div>
+
+      {/* Auto-paste */}
+      <div className="section">
+        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={settings.autoPaste}
+            onChange={async (e) => {
+              const enabling = e.target.checked;
+              if (enabling) {
+                const hasAccess = await window.voicePaste.checkAccessibility();
+                if (!hasAccess) {
+                  // Opens System Preferences → Accessibility
+                  await window.voicePaste.requestAccessibility();
+                }
+              }
+              onFieldChange((s) => ({ ...s, autoPaste: enabling }));
+            }}
+            style={{ width: "auto", cursor: "pointer" }}
+          />
+          Auto-paste after transcription
+        </label>
+        <div className="hint">
+          Automatically pastes transcribed text into the focused input field (simulates Cmd+V).
+          Requires Accessibility permission — macOS will prompt you to grant it.
         </div>
       </div>
     </div>

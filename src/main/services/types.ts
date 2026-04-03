@@ -11,6 +11,7 @@ export interface Settings {
   language: string;
   hotkey: string;
   historyHotkey: string;
+  autoPaste: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -26,6 +27,7 @@ export const DEFAULT_SETTINGS: Settings = {
   language: "en",
   hotkey: "CommandOrControl+Shift+Space",
   historyHotkey: "CommandOrControl+Shift+H",
+  autoPaste: false,
 };
 
 export interface HistoryEntry {

@@ -9,6 +9,8 @@ import {
 } from "electron";
 import { join } from "path";
 import { existsSync, mkdirSync } from "fs";
+import { exec, execSync } from "child_process";
+import { systemPreferences } from "electron";
 import { loadSettings, saveSettings, getAppDir } from "./services/settings";
 import type { Settings } from "./services/types";
 import { startRecording, stopRecording, isRecording } from "./services/audio";
@@ -160,6 +162,34 @@ function registerHotkeys() {
   console.log(`Hotkey "${settings.historyHotkey}" registered:`, historyOk);
 }
 
+// ── Auto-paste (simulate Cmd+V) ──
+
+function simulatePaste(): Promise<void> {
+  const trusted = systemPreferences.isTrustedAccessibilityClient(false);
+  if (!trusted) {
+    console.warn("[auto-paste] No Accessibility permission — prompting user");
+    // Opens System Settings → Accessibility with a prompt
+    systemPreferences.isTrustedAccessibilityClient(true);
+    new Notification({
+      title: "Vaak — Accessibility Required",
+      body: "Auto-paste needs Accessibility permission. Please enable Vaak in System Settings and try again.",
+      silent: false,
+    }).show();
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    exec(
+      `osascript -e 'tell application "System Events" to keystroke "v" using command down'`,
+      (err) => {
+        if (err) console.error("[auto-paste] Failed:", err.message);
+        else console.log("[auto-paste] Pasted");
+        resolve();
+      },
+    );
+  });
+}
+
 // ── Recording Flow ──
 
 async function toggleRecording() {
@@ -189,6 +219,13 @@ async function toggleRecording() {
       if (text) {
         clipboard.writeText(text);
         console.log("Text copied to clipboard");
+
+        if (settings.autoPaste) {
+          // Simulate Cmd+V to paste into focused input
+          console.log("Auto-pasting...");
+          await simulatePaste();
+        }
+
         try {
           insertHistory(text, settings.provider, settings.language, durationSecs);
           console.log("History entry saved");

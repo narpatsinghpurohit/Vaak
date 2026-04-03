@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow } from "electron";
+import { ipcMain, BrowserWindow, systemPreferences } from "electron";
 import { loadSettings, saveSettings, getAppDir } from "./services/settings";
 import type { Settings, HistoryEntry } from "./services/types";
 import {
@@ -34,6 +34,15 @@ export function registerIpcHandlers(
 
   // ── Settings ──
   ipcMain.handle("settings:get", () => getSettings());
+
+  // ── Accessibility permission check (for auto-paste) ──
+  ipcMain.handle("accessibility:check", () => {
+    return systemPreferences.isTrustedAccessibilityClient(false);
+  });
+  ipcMain.handle("accessibility:request", () => {
+    // passing true opens the System Preferences pane and prompts the user
+    return systemPreferences.isTrustedAccessibilityClient(true);
+  });
   ipcMain.handle("settings:save", (_e, settings: Settings) => {
     setSettings(settings);
     return { status: "saved" };
