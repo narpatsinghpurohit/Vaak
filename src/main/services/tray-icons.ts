@@ -136,17 +136,38 @@ async function renderAnimFrames(): Promise<{ waves: NativeImage[]; typing: Nativ
 
 /** Load icons — PNGs from assets, animated frames rendered from SVG */
 export async function initTrayIcons(): Promise<void> {
-  const { waves, typing } = await renderAnimFrames();
-  icons = {
-    idle: loadIcon("tray-idle.png"),
-    recording: waves,
-    transcribing: typing,
-  };
-  console.log("[tray-icons] Icons loaded");
+  const idle = loadIcon("tray-idle.png");
+
+  try {
+    const { waves, typing } = await renderAnimFrames();
+    icons = {
+      idle,
+      recording: waves,
+      transcribing: typing,
+    };
+    console.log("[tray-icons] All icons loaded (PNG + SVG frames)");
+  } catch (err) {
+    console.error("[tray-icons] SVG rendering failed, using idle icon for all states:", err);
+    icons = {
+      idle,
+      recording: [idle, idle, idle],
+      transcribing: [idle, idle, idle],
+    };
+  }
+}
+
+/** Fallback 1x1 black pixel PNG so Tray never gets an empty image */
+function fallbackIcon(): NativeImage {
+  const img = nativeImage.createFromDataURL(
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAG0lEQVQ4jWNgGAWjYBSMglEwCkbBKBgFgwkAAASSAAFjxuO+AAAAAElFTkSuQmCC"
+  );
+  img.setTemplateImage(true);
+  return img;
 }
 
 export function getIdleIcon(): NativeImage {
-  return icons?.idle ?? nativeImage.createEmpty();
+  const icon = icons?.idle;
+  return (icon && !icon.isEmpty()) ? icon : fallbackIcon();
 }
 
 // ── Animation controller ──

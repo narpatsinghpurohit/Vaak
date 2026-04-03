@@ -39,6 +39,7 @@
     },
     "files": [
       "dist/**/*",
+      "assets/**/*",
       "node_modules/**/*"
     ],
     "asarUnpack": [
