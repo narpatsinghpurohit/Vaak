@@ -7,7 +7,7 @@
     "dev": "node scripts/dev.js",
     "build": "tsc -p tsconfig.main.json && vite build --config vite.config.ts",
     "start": "electron .",
-    "package": "npm run build && electron-builder --mac --config",
+    "package": "bash scripts/package.sh",
     "typecheck": "tsc --noEmit -p tsconfig.main.json"
   },
   "dependencies": {
@@ -38,7 +38,9 @@
       "icon": "build/icon.icns"
     },
     "files": [
-      "dist/**/*",
+      "dist/main/**/*",
+      "dist/preload/**/*",
+      "dist/renderer/**/*",
       "assets/**/*"
     ],
     "asarUnpack": [
