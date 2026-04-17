@@ -154,7 +154,11 @@ parentPort.on("message", async (msg) => {
       }
       if (whisper) { await whisper.free(); whisper = null; loadedModel = null; }
       log("Loading model: " + msg.modelPath);
-      whisper = new Whisper(msg.modelPath, { gpu: true, offload: 0 });
+      // WARNING: smart-whisper treats offload=0 as "setTimeout(free, 0)" —
+      // i.e. offload IMMEDIATELY on next tick. Use a large value (1 day)
+      // to functionally disable auto-offload without tripping the
+      // setTimeout max-delay clamp (2^31-1 ms ≈ 24.85 days).
+      whisper = new Whisper(msg.modelPath, { gpu: true, offload: 86400 });
       // Force load now so we can measure + catch errors eagerly
       await whisper.load();
       loadedModel = msg.modelPath;
@@ -249,6 +253,9 @@ function attachGlobalListeners(w: Worker): void {
     }) => {
       if (msg.type === "log" && typeof msg.text === "string") {
         pushLog(msg.text);
+        // Also forward to main's console so Terminal-launched debugging
+        // can see worker-side timing without opening the Settings panel.
+        console.log(msg.text);
         emitStatus();
       } else if (msg.type === "metal-shader") {
         if (typeof msg.found === "boolean") metalShaderFound = msg.found;
