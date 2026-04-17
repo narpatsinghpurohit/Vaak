@@ -7,6 +7,7 @@ export function useSettings() {
     models,
     downloading,
     loaded,
+    modelRuntime,
     load,
     save,
     loadModels,
@@ -15,6 +16,10 @@ export function useSettings() {
     deleteModel,
     selectModel,
     setProvider,
+    loadModelRuntime,
+    triggerLoadModel,
+    triggerOffloadModel,
+    triggerReloadModel,
   } = useSettingsStore();
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>();
@@ -22,6 +27,7 @@ export function useSettings() {
   useEffect(() => {
     load();
     loadModels();
+    loadModelRuntime();
   }, []);
 
   const updateField = useCallback(
@@ -59,6 +65,7 @@ export function useSettings() {
     models,
     downloading,
     loaded,
+    modelRuntime,
     loadModels,
     setProvider,
     selectModel,
@@ -67,5 +74,9 @@ export function useSettings() {
     handleDeleteModel,
     updateField,
     debouncedUpdate,
+    loadModelRuntime,
+    triggerLoadModel,
+    triggerOffloadModel,
+    triggerReloadModel,
   };
 }

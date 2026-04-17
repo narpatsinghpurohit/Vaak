@@ -155,3 +155,71 @@ select:focus {
   color: var(--fg-muted);
   margin-top: 2px;
 }
+
+.runtime-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  background: var(--surface);
+}
+
+.runtime-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.runtime-label {
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
+
+.runtime-value {
+  color: var(--fg);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 70%;
+  font-variant-numeric: tabular-nums;
+}
+
+.runtime-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.runtime-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.runtime-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.runtime-logs {
+  margin-top: 10px;
+  max-height: 160px;
+  overflow: auto;
+  font-family: SF Mono, Menlo, monospace;
+  font-size: 11px;
+  background: var(--bg);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.5;
+  color: var(--fg-muted);
+}

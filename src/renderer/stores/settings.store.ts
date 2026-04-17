@@ -5,6 +5,7 @@ interface SettingsState {
   models: ModelStatus[];
   downloading: Record<string, DownloadProgress>;
   loaded: boolean;
+  modelRuntime: ModelRuntimeStatus | null;
   load: () => Promise<void>;
   save: (settings: Settings) => Promise<void>;
   loadModels: () => Promise<void>;
@@ -13,6 +14,10 @@ interface SettingsState {
   deleteModel: (filename: string) => Promise<void>;
   selectModel: (filename: string) => void;
   setProvider: (provider: "local" | "cloud") => void;
+  loadModelRuntime: () => Promise<void>;
+  triggerLoadModel: () => Promise<void>;
+  triggerOffloadModel: () => Promise<void>;
+  triggerReloadModel: () => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -20,6 +25,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   models: [],
   downloading: {},
   loaded: false,
+  modelRuntime: null,
 
   load: async () => {
     const settings = await window.voicePaste.getSettings();
@@ -88,6 +94,23 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     get().save(updated);
     if (provider === "local") get().loadModels();
   },
+
+  loadModelRuntime: async () => {
+    const status = await window.voicePaste.getModelRuntime();
+    set({ modelRuntime: status });
+  },
+
+  triggerLoadModel: async () => {
+    await window.voicePaste.loadModelRuntime();
+  },
+
+  triggerOffloadModel: async () => {
+    await window.voicePaste.offloadModelRuntime();
+  },
+
+  triggerReloadModel: async () => {
+    await window.voicePaste.reloadModelRuntime();
+  },
 }));
 
 // Listen for download events from main process
@@ -114,5 +137,9 @@ if (typeof window !== "undefined" && window.voicePaste) {
       return { downloading };
     });
     console.error(`Download failed: ${data.filename}: ${data.error}`);
+  });
+
+  window.voicePaste.onModelRuntimeStatus((status) => {
+    useSettingsStore.setState({ modelRuntime: status });
   });
 }

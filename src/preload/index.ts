@@ -20,6 +20,17 @@ const api = {
   deleteModel: (filename: string) => ipcRenderer.invoke("models:delete", filename),
   getModelProgress: (filename: string) => ipcRenderer.invoke("models:getProgress", filename),
 
+  // Model runtime (GPU/CPU load state, offload/reload)
+  getModelRuntime: () => ipcRenderer.invoke("modelRuntime:get"),
+  loadModelRuntime: () => ipcRenderer.invoke("modelRuntime:load"),
+  offloadModelRuntime: () => ipcRenderer.invoke("modelRuntime:offload"),
+  reloadModelRuntime: () => ipcRenderer.invoke("modelRuntime:reload"),
+  onModelRuntimeStatus: (callback: (data: any) => void) => {
+    const handler = (_e: any, data: any) => callback(data);
+    ipcRenderer.on("modelRuntime:status", handler);
+    return () => ipcRenderer.removeListener("modelRuntime:status", handler);
+  },
+
   // Accessibility (for auto-paste)
   checkAccessibility: () => ipcRenderer.invoke("accessibility:check") as Promise<boolean>,
   requestAccessibility: () => ipcRenderer.invoke("accessibility:request") as Promise<boolean>,

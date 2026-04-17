@@ -8,6 +8,7 @@ export function Settings() {
     models,
     downloading,
     loaded,
+    modelRuntime,
     setProvider,
     selectModel,
     startDownload,
@@ -15,6 +16,9 @@ export function Settings() {
     handleDeleteModel,
     updateField,
     debouncedUpdate,
+    triggerLoadModel,
+    triggerOffloadModel,
+    triggerReloadModel,
   } = useSettings();
 
   return (
@@ -23,6 +27,7 @@ export function Settings() {
       models={models}
       downloading={downloading}
       loaded={loaded}
+      modelRuntime={modelRuntime}
       onProviderChange={setProvider}
       onSelectModel={selectModel}
       onDownloadModel={startDownload}
@@ -30,6 +35,9 @@ export function Settings() {
       onDeleteModel={handleDeleteModel}
       onFieldChange={updateField}
       onDebouncedChange={debouncedUpdate}
+      onLoadModel={triggerLoadModel}
+      onOffloadModel={triggerOffloadModel}
+      onReloadModel={triggerReloadModel}
     />
   );
 }

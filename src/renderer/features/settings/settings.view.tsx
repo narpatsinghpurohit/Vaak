@@ -95,6 +95,7 @@ interface SettingsViewProps {
   models: ModelStatus[];
   downloading: Record<string, DownloadProgress>;
   loaded: boolean;
+  modelRuntime: ModelRuntimeStatus | null;
   onProviderChange: (provider: "local" | "cloud") => void;
   onSelectModel: (filename: string) => void;
   onDownloadModel: (filename: string) => void;
@@ -102,6 +103,140 @@ interface SettingsViewProps {
   onDeleteModel: (filename: string, displayName: string) => void;
   onFieldChange: (updater: (s: Settings) => Settings) => void;
   onDebouncedChange: (updater: (s: Settings) => Settings) => void;
+  onLoadModel: () => Promise<void> | void;
+  onOffloadModel: () => Promise<void> | void;
+  onReloadModel: () => Promise<void> | void;
+}
+
+const STATE_LABEL: Record<ModelRuntimeState, string> = {
+  idle: "Not loaded",
+  loading: "Loading…",
+  loaded: "Loaded",
+  offloaded: "Offloaded",
+  error: "Error",
+};
+
+const STATE_COLOR: Record<ModelRuntimeState, string> = {
+  idle: "var(--fg-muted)",
+  loading: "var(--accent)",
+  loaded: "var(--success)",
+  offloaded: "var(--fg-muted)",
+  error: "var(--danger)",
+};
+
+function backendLabel(rt: ModelRuntimeStatus): string {
+  if (!rt.gpuRequested) return "CPU (GPU disabled)";
+  if (rt.metalShaderAvailable && rt.metalShaderCopied) return "Metal GPU (requested)";
+  if (rt.metalShaderAvailable && !rt.metalShaderCopied) return "Metal shader NOT copied — likely CPU fallback";
+  return "CPU (Metal shader unavailable)";
+}
+
+function formatLoadTime(ms: number | null): string {
+  if (ms == null) return "—";
+  if (ms < 1000) return `${ms} ms`;
+  return `${(ms / 1000).toFixed(2)} s`;
+}
+
+function ModelRuntimePanel({
+  runtime,
+  canLoad,
+  onLoad,
+  onOffload,
+  onReload,
+}: {
+  runtime: ModelRuntimeStatus | null;
+  canLoad: boolean;
+  onLoad: () => Promise<void> | void;
+  onOffload: () => Promise<void> | void;
+  onReload: () => Promise<void> | void;
+}) {
+  const [showLogs, setShowLogs] = React.useState(false);
+  const rt = runtime;
+
+  if (!rt) {
+    return (
+      <div className="runtime-panel">
+        <div style={{ color: "var(--fg-muted)", fontSize: 12 }}>Runtime status unavailable.</div>
+      </div>
+    );
+  }
+
+  const isLoaded = rt.state === "loaded";
+  const isLoading = rt.state === "loading";
+  const isBusy = isLoading;
+
+  return (
+    <div className="runtime-panel">
+      <div className="runtime-row">
+        <span className="runtime-label">Status</span>
+        <span className="runtime-badge" style={{ color: STATE_COLOR[rt.state] }}>
+          <span className="runtime-dot" style={{ background: STATE_COLOR[rt.state] }} />
+          {STATE_LABEL[rt.state]}
+        </span>
+      </div>
+
+      <div className="runtime-row">
+        <span className="runtime-label">Backend</span>
+        <span className="runtime-value">{backendLabel(rt)}</span>
+      </div>
+
+      <div className="runtime-row">
+        <span className="runtime-label">Metal shader</span>
+        <span className="runtime-value">
+          {rt.metalShaderAvailable ? (rt.metalShaderCopied ? "✓ copied" : "⚠ present but not copied") : "✗ missing"}
+        </span>
+      </div>
+
+      {rt.modelId && (
+        <div className="runtime-row">
+          <span className="runtime-label">Model</span>
+          <span className="runtime-value" title={rt.modelPath ?? ""}>{rt.modelId}</span>
+        </div>
+      )}
+
+      <div className="runtime-row">
+        <span className="runtime-label">Load time</span>
+        <span className="runtime-value">{formatLoadTime(rt.loadDurationMs)}</span>
+      </div>
+
+      {rt.lastError && (
+        <div className="runtime-row">
+          <span className="runtime-label">Error</span>
+          <span className="runtime-value" style={{ color: "var(--danger)" }}>{rt.lastError}</span>
+        </div>
+      )}
+
+      <div className="hint" style={{ marginTop: 8 }}>
+        Fast load (&lt; ~1s for small models) typically means Metal GPU. Multi-second loads suggest CPU fallback.
+        Expand logs below to see the worker's init trace.
+      </div>
+
+      <div className="runtime-actions">
+        {!isLoaded && (
+          <button className="btn" disabled={isBusy || !canLoad} onClick={() => onLoad()}>
+            {isLoading ? "Loading…" : "Load model"}
+          </button>
+        )}
+        {isLoaded && (
+          <button className="btn" disabled={isBusy} onClick={() => onOffload()}>
+            Offload
+          </button>
+        )}
+        <button className="btn" disabled={isBusy || !canLoad} onClick={() => onReload()}>
+          Reload
+        </button>
+        <button className="btn" onClick={() => setShowLogs((v) => !v)}>
+          {showLogs ? "Hide logs" : "Show logs"}
+        </button>
+      </div>
+
+      {showLogs && (
+        <pre className="runtime-logs">
+          {rt.logs.length === 0 ? "(no logs yet)" : rt.logs.join("\n")}
+        </pre>
+      )}
+    </div>
+  );
 }
 
 export function SettingsView({
@@ -109,6 +244,7 @@ export function SettingsView({
   models,
   downloading,
   loaded,
+  modelRuntime,
   onProviderChange,
   onSelectModel,
   onDownloadModel,
@@ -116,6 +252,9 @@ export function SettingsView({
   onDeleteModel,
   onFieldChange,
   onDebouncedChange,
+  onLoadModel,
+  onOffloadModel,
+  onReloadModel,
 }: SettingsViewProps) {
   if (!loaded || !settings) {
     return <div style={{ padding: 24, color: "var(--fg-muted)" }}>Loading...</div>;
@@ -195,23 +334,39 @@ export function SettingsView({
 
       {/* Local model list */}
       {settings.provider === "local" && (
-        <div className="section">
-          <label>Whisper Models</label>
-          <div className="model-list">
-            {models.map((m) => (
-              <ModelRow
-                key={m.id}
-                model={m}
-                isActive={settings.local.modelId === m.filename}
-                downloading={downloading[m.filename]}
-                onSelect={onSelectModel}
-                onDownload={onDownloadModel}
-                onCancel={onCancelDownload}
-                onDelete={onDeleteModel}
-              />
-            ))}
+        <>
+          <div className="section">
+            <label>Whisper Models</label>
+            <div className="model-list">
+              {models.map((m) => (
+                <ModelRow
+                  key={m.id}
+                  model={m}
+                  isActive={settings.local.modelId === m.filename}
+                  downloading={downloading[m.filename]}
+                  onSelect={onSelectModel}
+                  onDownload={onDownloadModel}
+                  onCancel={onCancelDownload}
+                  onDelete={onDeleteModel}
+                />
+              ))}
+            </div>
           </div>
-        </div>
+
+          <div className="section">
+            <label>Model Runtime</label>
+            <ModelRuntimePanel
+              runtime={modelRuntime}
+              canLoad={Boolean(
+                settings.local.modelId &&
+                  models.find((m) => m.filename === settings.local.modelId)?.downloaded,
+              )}
+              onLoad={onLoadModel}
+              onOffload={onOffloadModel}
+              onReload={onReloadModel}
+            />
+          </div>
+        </>
       )}
 
       {/* Language */}

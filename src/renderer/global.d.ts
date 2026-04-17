@@ -47,6 +47,23 @@ interface DownloadProgress {
   percent: number;
 }
 
+type ModelRuntimeState = "idle" | "loading" | "loaded" | "offloaded" | "error";
+
+interface ModelRuntimeStatus {
+  state: ModelRuntimeState;
+  modelId: string | null;
+  modelPath: string | null;
+  gpuRequested: boolean;
+  metalShaderAvailable: boolean;
+  metalShaderCopied: boolean;
+  metalShaderDest: string | null;
+  loadStartedAt: number | null;
+  loadedAt: number | null;
+  loadDurationMs: number | null;
+  lastError: string | null;
+  logs: string[];
+}
+
 interface VoicePasteApi {
   getSettings: () => Promise<Settings>;
   saveSettings: (settings: Settings) => Promise<{ status: string }>;
@@ -65,6 +82,11 @@ interface VoicePasteApi {
   onDownloadProgress: (callback: (data: DownloadProgress) => void) => () => void;
   onDownloadComplete: (callback: (data: { filename: string }) => void) => () => void;
   onDownloadError: (callback: (data: { filename: string; error: string }) => void) => () => void;
+  getModelRuntime: () => Promise<ModelRuntimeStatus>;
+  loadModelRuntime: () => Promise<{ status: string; reason?: string }>;
+  offloadModelRuntime: () => Promise<{ status: string }>;
+  reloadModelRuntime: () => Promise<{ status: string; reason?: string }>;
+  onModelRuntimeStatus: (callback: (data: ModelRuntimeStatus) => void) => () => void;
 }
 
 interface Window {

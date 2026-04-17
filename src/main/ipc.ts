@@ -17,6 +17,13 @@ import {
   formatBytes,
   formatSpeed,
 } from "./services/model-manager";
+import {
+  getModelStatus,
+  offloadModel,
+  reloadModel,
+  preloadModel,
+  modelEvents,
+} from "./services/local-whisper";
 import { join } from "path";
 import { existsSync, mkdirSync } from "fs";
 
@@ -132,5 +139,48 @@ export function registerIpcHandlers(
       speedDisplay: formatSpeed(prog.speed),
       percent: prog.total > 0 ? Math.round((prog.downloaded / prog.total) * 100) : 0,
     };
+  });
+
+  // ── Model runtime (load/offload/reload) ──
+  ipcMain.handle("modelRuntime:get", () => getModelStatus());
+
+  ipcMain.handle("modelRuntime:offload", async () => {
+    await offloadModel();
+    return { status: "offloaded" };
+  });
+
+  ipcMain.handle("modelRuntime:reload", async () => {
+    const s = getSettings();
+    if (s.provider !== "local") {
+      return { status: "skipped", reason: "not-local-provider" };
+    }
+    if (!s.local.modelId) {
+      return { status: "error", reason: "no-model-selected" };
+    }
+    const modelPath = join(modelsDir, s.local.modelId);
+    if (!existsSync(modelPath)) {
+      return { status: "error", reason: "model-not-found" };
+    }
+    await reloadModel(modelsDir, s.local.modelId);
+    return { status: "reloading" };
+  });
+
+  ipcMain.handle("modelRuntime:load", () => {
+    const s = getSettings();
+    if (s.provider !== "local") return { status: "skipped" };
+    if (!s.local.modelId) return { status: "error", reason: "no-model-selected" };
+    const modelPath = join(modelsDir, s.local.modelId);
+    if (!existsSync(modelPath)) return { status: "error", reason: "model-not-found" };
+    preloadModel(modelsDir, s.local.modelId);
+    return { status: "loading" };
+  });
+
+  // Broadcast runtime status changes to all renderer windows
+  modelEvents.on("status", (payload) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send("modelRuntime:status", payload);
+      }
+    }
   });
 }
