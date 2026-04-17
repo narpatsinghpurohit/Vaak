@@ -126,8 +126,7 @@ const STATE_COLOR: Record<ModelRuntimeState, string> = {
 
 function backendLabel(rt: ModelRuntimeStatus): string {
   if (!rt.gpuRequested) return "CPU (GPU disabled)";
-  if (rt.metalShaderAvailable && rt.metalShaderCopied) return "Metal GPU (requested)";
-  if (rt.metalShaderAvailable && !rt.metalShaderCopied) return "Metal shader NOT copied — likely CPU fallback";
+  if (rt.metalShaderAvailable) return "Metal GPU (requested)";
   return "CPU (Metal shader unavailable)";
 }
 
@@ -183,7 +182,7 @@ function ModelRuntimePanel({
       <div className="runtime-row">
         <span className="runtime-label">Metal shader</span>
         <span className="runtime-value">
-          {rt.metalShaderAvailable ? (rt.metalShaderCopied ? "✓ copied" : "⚠ present but not copied") : "✗ missing"}
+          {rt.metalShaderAvailable ? "✓ found" : "✗ missing"}
         </span>
       </div>
 

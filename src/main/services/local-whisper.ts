@@ -87,32 +87,49 @@ function findSmartWhisper(): string {
   throw new Error("smart-whisper not found");
 }
 
+function resolveMetalShader(smartWhisperDir: string): string | null {
+  // smart-whisper 0.3.0 ships whisper.cpp/ggml-metal.metal (flat); newer layouts use whisper.cpp/ggml/src/
+  const candidates = [
+    join(smartWhisperDir, "whisper.cpp/ggml-metal.metal"),
+    join(smartWhisperDir, "whisper.cpp/ggml/src/ggml-metal.metal"),
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) return p;
+  }
+  return null;
+}
+
 function makeWorkerCode(): string {
   const smartWhisperDir = findSmartWhisper();
-  const metalShader = join(smartWhisperDir, "whisper.cpp/ggml/src/ggml-metal.metal");
-  const hasShader = existsSync(metalShader);
+  const metalShader = resolveMetalShader(smartWhisperDir);
+  const hasShader = metalShader !== null;
   metalShaderFound = hasShader;
-  metalShaderDest = hasShader ? join(process.cwd(), "ggml-metal.metal") : null;
+  metalShaderDest = metalShader;
 
   return `
 const { parentPort } = require("worker_threads");
 const { existsSync, copyFileSync } = require("fs");
-const { join } = require("path");
-const { Whisper } = require(${JSON.stringify(join(smartWhisperDir, "dist/index.js"))});
+const { join, dirname } = require("path");
 
 ${hasShader ? `
+// Tell whisper.cpp's Metal backend exactly where to find the shader —
+// this works regardless of cwd, bundle path, or sandboxing.
 const metalSrc = ${JSON.stringify(metalShader)};
+process.env.GGML_METAL_PATH_RESOURCES = dirname(metalSrc);
+// Belt-and-suspenders: also try to copy to cwd for older fallback path.
 const metalDest = join(process.cwd(), "ggml-metal.metal");
 let metalCopied = existsSync(metalDest);
 if (!metalCopied) {
   try { copyFileSync(metalSrc, metalDest); metalCopied = true; } catch(e) {
-    parentPort.postMessage({ type: "log", text: "[worker] metal shader copy failed: " + e.message });
+    parentPort.postMessage({ type: "log", text: "[worker] metal shader copy to cwd failed (ok — GGML_METAL_PATH_RESOURCES set): " + e.message });
   }
 }
-parentPort.postMessage({ type: "metal-shader", copied: metalCopied, dest: metalDest });
+parentPort.postMessage({ type: "metal-shader", found: true, src: metalSrc, copied: metalCopied, dest: metalDest });
 ` : `
-parentPort.postMessage({ type: "metal-shader", copied: false, dest: null });
+parentPort.postMessage({ type: "metal-shader", found: false, src: null, copied: false, dest: null });
 `}
+
+const { Whisper } = require(${JSON.stringify(join(smartWhisperDir, "dist/index.js"))});
 
 let whisper = null;
 let loadedModel = null;
@@ -185,18 +202,29 @@ parentPort.on("message", async (msg) => {
 }
 
 function attachGlobalListeners(w: Worker): void {
-  w.on("message", (msg: { type: string; text?: string; copied?: boolean; dest?: string | null }) => {
-    if (msg.type === "log" && typeof msg.text === "string") {
-      pushLog(msg.text);
-      emitStatus();
-    } else if (msg.type === "metal-shader") {
-      metalShaderCopied = !!msg.copied;
-      status.metalShaderAvailable = metalShaderFound;
-      status.metalShaderCopied = metalShaderCopied;
-      status.metalShaderDest = msg.dest ?? metalShaderDest;
-      emitStatus();
-    }
-  });
+  w.on(
+    "message",
+    (msg: {
+      type: string;
+      text?: string;
+      found?: boolean;
+      src?: string | null;
+      copied?: boolean;
+      dest?: string | null;
+    }) => {
+      if (msg.type === "log" && typeof msg.text === "string") {
+        pushLog(msg.text);
+        emitStatus();
+      } else if (msg.type === "metal-shader") {
+        if (typeof msg.found === "boolean") metalShaderFound = msg.found;
+        metalShaderCopied = !!msg.copied;
+        status.metalShaderAvailable = metalShaderFound;
+        status.metalShaderCopied = metalShaderCopied;
+        status.metalShaderDest = msg.src ?? metalShaderDest;
+        emitStatus();
+      }
+    },
+  );
 }
 
 function getWorker(): Worker {
