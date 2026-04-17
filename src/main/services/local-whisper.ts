@@ -154,13 +154,23 @@ parentPort.on("message", async (msg) => {
       }
       if (whisper) { await whisper.free(); whisper = null; loadedModel = null; }
       log("Loading model: " + msg.modelPath);
-      // WARNING: smart-whisper treats offload=0 as "setTimeout(free, 0)" —
-      // i.e. offload IMMEDIATELY on next tick. Use a large value (1 day)
-      // to functionally disable auto-offload without tripping the
-      // setTimeout max-delay clamp (2^31-1 ms ≈ 24.85 days).
+      // smart-whisper has NO config option for "never offload" — any numeric
+      // value schedules setTimeout(free, offload*1000). To keep the model
+      // resident for the entire app lifetime (voice-paste is a keyboard-like
+      // utility; cold reload latency is unacceptable), monkey-patch both
+      // timer methods to no-ops before calling load(). Manual offload via
+      // whisper.free() still works — that's what the Settings Offload
+      // button uses.
       whisper = new Whisper(msg.modelPath, { gpu: true, offload: 86400 });
-      // Force load now so we can measure + catch errors eagerly
+      whisper.reset_offload_timer = function() {};
+      whisper.clear_offload_timer = function() {};
       await whisper.load();
+      // Belt-and-suspenders: clear any timer that slipped through.
+      if (whisper._offload_timer) {
+        clearTimeout(whisper._offload_timer);
+        whisper._offload_timer = null;
+      }
+      log("Model resident; auto-offload disabled");
       loadedModel = msg.modelPath;
       log("Model load complete");
       parentPort.postMessage({ type: "loaded", modelPath: msg.modelPath });
