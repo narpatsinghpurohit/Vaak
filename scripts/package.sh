@@ -19,6 +19,9 @@ say "cleaning build outputs (dist/, out/, release/)"
 rm -rf dist out release
 ok "cleaned"
 
+say "applying smart-whisper patches (state reuse + param init)"
+npx patch-package
+
 say "compiling main + preload (tsc)"
 npx tsc -p tsconfig.main.json
 

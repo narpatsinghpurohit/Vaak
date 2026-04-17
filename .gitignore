@@ -21,3 +21,4 @@ release/
 *.dmg
 *.zip
 *.blockmap
+ggml-metal.metal

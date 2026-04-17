@@ -1,6 +1,6 @@
 {
   "name": "vaak",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "Vaak — voice to clipboard, instantly",
   "main": "dist/main/index.js",
   "scripts": {
@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.main.json && vite build --config vite.config.ts",
     "start": "electron .",
     "package": "bash scripts/package.sh",
-    "typecheck": "tsc --noEmit -p tsconfig.main.json"
+    "typecheck": "tsc --noEmit -p tsconfig.main.json",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "better-sqlite3": "^11.7.0",
@@ -23,6 +24,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8",
+    "patch-package": "^8.0.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "typescript": "^5.7.0",
