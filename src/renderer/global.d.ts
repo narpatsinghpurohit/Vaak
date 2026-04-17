@@ -60,6 +60,8 @@ interface ModelRuntimeStatus {
   loadStartedAt: number | null;
   loadedAt: number | null;
   loadDurationMs: number | null;
+  lastTranscribeMs: number | null;
+  lastTranscribeAudioSecs: number | null;
   lastError: string | null;
   logs: string[];
 }

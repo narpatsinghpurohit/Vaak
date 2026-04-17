@@ -1,8 +1,11 @@
 import { join } from "path";
 import { existsSync, writeFileSync } from "fs";
 import { Worker } from "worker_threads";
-import { tmpdir } from "os";
+import { tmpdir, cpus } from "os";
 import { EventEmitter } from "events";
+
+// Tuned for Apple Silicon + Metal. See transcribe call below for rationale.
+const WHISPER_THREADS = Math.min(cpus().length, 8);
 
 let worker: Worker | null = null;
 let workerReady = false;
@@ -28,6 +31,8 @@ export interface ModelRuntimeStatus {
   loadStartedAt: number | null;
   loadedAt: number | null;
   loadDurationMs: number | null;
+  lastTranscribeMs: number | null;
+  lastTranscribeAudioSecs: number | null;
   lastError: string | null;
   logs: string[];
 }
@@ -45,6 +50,8 @@ const status: ModelRuntimeStatus = {
   loadStartedAt: null,
   loadedAt: null,
   loadDurationMs: null,
+  lastTranscribeMs: null,
+  lastTranscribeAudioSecs: null,
   lastError: null,
   logs: [],
 };
@@ -189,10 +196,38 @@ parentPort.on("message", async (msg) => {
 
       if (pcm.length < 16000) { parentPort.postMessage({ type: "result", text: "" }); return; }
 
-      const task = await whisper.transcribe(pcm, { language: msg.language === "auto" ? "auto" : msg.language });
+      const audioSecs = pcm.length / 16000;
+      const t0 = Date.now();
+      // Speed tuning for Apple Silicon + Metal:
+      //   strategy=0 (GREEDY)          — 2-5x faster than smart-whisper's BEAM_SEARCH default
+      //   temperature=0, temperature_inc=0 — disables the 6-pass fallback retry loop that
+      //                                       causes the invisible "sometimes slow" behavior
+      //   no_context=true              — don't carry prior segments across clips
+      //   n_threads=${WHISPER_THREADS} — mel spectrogram parallelism on P-cores
+      //   suppress_blank=true, suppress_non_speech_tokens=true — skip filler tokens
+      const task = await whisper.transcribe(pcm, {
+        language: msg.language === "auto" ? "auto" : msg.language,
+        strategy: 0,
+        no_context: true,
+        temperature: 0,
+        temperature_inc: 0,
+        n_threads: ${WHISPER_THREADS},
+        suppress_blank: true,
+        suppress_non_speech_tokens: true,
+        print_progress: false,
+        print_realtime: false,
+        print_timestamps: false,
+      });
       const segments = await task.result;
+      const elapsedMs = Date.now() - t0;
       const text = segments.map(s => s.text).join("").trim();
-      parentPort.postMessage({ type: "result", text: text === "[BLANK_AUDIO]" ? "" : text });
+      log("Transcribed " + audioSecs.toFixed(1) + "s audio in " + elapsedMs + " ms (" + (audioSecs * 1000 / elapsedMs).toFixed(1) + "x realtime)");
+      parentPort.postMessage({
+        type: "result",
+        text: text === "[BLANK_AUDIO]" ? "" : text,
+        elapsedMs,
+        audioSecs,
+      });
     } catch (err) {
       parentPort.postMessage({ type: "result", text: "", error: err.message });
     }
@@ -364,7 +399,13 @@ export function transcribeLocal(
       });
     };
 
-    const handler = (msg: { type: string; text?: string; error?: string }) => {
+    const handler = (msg: {
+      type: string;
+      text?: string;
+      error?: string;
+      elapsedMs?: number;
+      audioSecs?: number;
+    }) => {
       if (msg.type === "loaded") {
         workerReady = true;
         status.state = "loaded";
@@ -374,6 +415,11 @@ export function transcribeLocal(
         sendTranscribe();
       } else if (msg.type === "result") {
         w.removeListener("message", handler);
+        if (typeof msg.elapsedMs === "number") {
+          status.lastTranscribeMs = msg.elapsedMs;
+          status.lastTranscribeAudioSecs = msg.audioSecs ?? null;
+          emitStatus();
+        }
         if (msg.error) reject(new Error(msg.error));
         else resolve(msg.text ?? "");
       } else if (msg.type === "error") {

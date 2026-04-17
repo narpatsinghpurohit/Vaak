@@ -136,6 +136,14 @@ function formatLoadTime(ms: number | null): string {
   return `${(ms / 1000).toFixed(2)} s`;
 }
 
+function formatTranscribeTime(ms: number | null, audioSecs: number | null): string {
+  if (ms == null) return "—";
+  const timeStr = ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(2)} s`;
+  if (audioSecs == null || audioSecs <= 0) return timeStr;
+  const realtime = (audioSecs * 1000) / ms;
+  return `${timeStr} · ${realtime.toFixed(1)}× realtime (${audioSecs.toFixed(1)}s audio)`;
+}
+
 function ModelRuntimePanel({
   runtime,
   canLoad,
@@ -198,6 +206,13 @@ function ModelRuntimePanel({
         <span className="runtime-value">{formatLoadTime(rt.loadDurationMs)}</span>
       </div>
 
+      <div className="runtime-row">
+        <span className="runtime-label">Last transcribe</span>
+        <span className="runtime-value">
+          {formatTranscribeTime(rt.lastTranscribeMs, rt.lastTranscribeAudioSecs)}
+        </span>
+      </div>
+
       {rt.lastError && (
         <div className="runtime-row">
           <span className="runtime-label">Error</span>
@@ -206,8 +221,8 @@ function ModelRuntimePanel({
       )}
 
       <div className="hint" style={{ marginTop: 8 }}>
-        Fast load (&lt; ~1s for small models) typically means Metal GPU. Multi-second loads suggest CPU fallback.
-        Expand logs below to see the worker's init trace.
+        On Apple Silicon + Metal, expect load &lt; 500 ms and transcribe ≥ 10× realtime.
+        Slower than that means CPU fallback — check the worker logs.
       </div>
 
       <div className="runtime-actions">
