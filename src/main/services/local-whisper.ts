@@ -9,9 +9,6 @@ const WHISPER_THREADS = Math.min(cpus().length, 8);
 
 let worker: Worker | null = null;
 let workerReady = false;
-let metalShaderFound = false;
-let metalShaderDest: string | null = null;
-let metalShaderCopied = false;
 
 export type ModelRuntimeState =
   | "idle"
@@ -25,9 +22,6 @@ export interface ModelRuntimeStatus {
   modelId: string | null;
   modelPath: string | null;
   gpuRequested: boolean;
-  metalShaderAvailable: boolean;
-  metalShaderCopied: boolean;
-  metalShaderDest: string | null;
   loadStartedAt: number | null;
   loadedAt: number | null;
   loadDurationMs: number | null;
@@ -44,9 +38,6 @@ const status: ModelRuntimeStatus = {
   modelId: null,
   modelPath: null,
   gpuRequested: true,
-  metalShaderAvailable: false,
-  metalShaderCopied: false,
-  metalShaderDest: null,
   loadStartedAt: null,
   loadedAt: null,
   loadDurationMs: null,
@@ -94,47 +85,12 @@ function findSmartWhisper(): string {
   throw new Error("smart-whisper not found");
 }
 
-function resolveMetalShader(smartWhisperDir: string): string | null {
-  // smart-whisper 0.3.0 ships whisper.cpp/ggml-metal.metal (flat); newer layouts use whisper.cpp/ggml/src/
-  const candidates = [
-    join(smartWhisperDir, "whisper.cpp/ggml-metal.metal"),
-    join(smartWhisperDir, "whisper.cpp/ggml/src/ggml-metal.metal"),
-  ];
-  for (const p of candidates) {
-    if (existsSync(p)) return p;
-  }
-  return null;
-}
-
-function makeWorkerCode(): string {
-  const smartWhisperDir = findSmartWhisper();
-  const metalShader = resolveMetalShader(smartWhisperDir);
-  const hasShader = metalShader !== null;
-  metalShaderFound = hasShader;
-  metalShaderDest = metalShader;
-
+function makeWorkerCode(smartWhisperDir: string): string {
+  // The Metal shader is embedded directly into smart-whisper.node
+  // (GGML_METAL_EMBED_LIBRARY — see patches/smart-whisper+0.8.1.patch), so Metal
+  // loads with no env var, no external file, and no cwd dependency.
   return `
 const { parentPort } = require("worker_threads");
-const { existsSync, copyFileSync } = require("fs");
-const { join, dirname } = require("path");
-
-${hasShader ? `
-// Tell whisper.cpp's Metal backend exactly where to find the shader —
-// this works regardless of cwd, bundle path, or sandboxing.
-const metalSrc = ${JSON.stringify(metalShader)};
-process.env.GGML_METAL_PATH_RESOURCES = dirname(metalSrc);
-// Belt-and-suspenders: also try to copy to cwd for older fallback path.
-const metalDest = join(process.cwd(), "ggml-metal.metal");
-let metalCopied = existsSync(metalDest);
-if (!metalCopied) {
-  try { copyFileSync(metalSrc, metalDest); metalCopied = true; } catch(e) {
-    parentPort.postMessage({ type: "log", text: "[worker] metal shader copy to cwd failed (ok — GGML_METAL_PATH_RESOURCES set): " + e.message });
-  }
-}
-parentPort.postMessage({ type: "metal-shader", found: true, src: metalSrc, copied: metalCopied, dest: metalDest });
-` : `
-parentPort.postMessage({ type: "metal-shader", found: false, src: null, copied: false, dest: null });
-`}
 
 const { Whisper } = require(${JSON.stringify(join(smartWhisperDir, "dist/index.js"))});
 
@@ -251,44 +207,26 @@ parentPort.on("message", async (msg) => {
 }
 
 function attachGlobalListeners(w: Worker): void {
-  w.on(
-    "message",
-    (msg: {
-      type: string;
-      text?: string;
-      found?: boolean;
-      src?: string | null;
-      copied?: boolean;
-      dest?: string | null;
-    }) => {
-      if (msg.type === "log" && typeof msg.text === "string") {
-        pushLog(msg.text);
-        // Also forward to main's console so Terminal-launched debugging
-        // can see worker-side timing without opening the Settings panel.
-        console.log(msg.text);
-        emitStatus();
-      } else if (msg.type === "metal-shader") {
-        if (typeof msg.found === "boolean") metalShaderFound = msg.found;
-        metalShaderCopied = !!msg.copied;
-        status.metalShaderAvailable = metalShaderFound;
-        status.metalShaderCopied = metalShaderCopied;
-        status.metalShaderDest = msg.src ?? metalShaderDest;
-        emitStatus();
-      }
-    },
-  );
+  w.on("message", (msg: { type: string; text?: string }) => {
+    if (msg.type === "log" && typeof msg.text === "string") {
+      pushLog(msg.text);
+      // Also forward to main's console so Terminal-launched debugging
+      // can see worker-side timing without opening the Settings panel.
+      console.log(msg.text);
+      emitStatus();
+    }
+  });
 }
 
 function getWorker(): Worker {
   if (worker) return worker;
 
-  const code = makeWorkerCode();
+  const smartWhisperDir = findSmartWhisper();
+  const code = makeWorkerCode(smartWhisperDir);
   const workerPath = join(tmpdir(), "vaak-whisper-worker.js");
   writeFileSync(workerPath, code);
 
   worker = new Worker(workerPath);
-  status.metalShaderAvailable = metalShaderFound;
-  status.metalShaderDest = metalShaderDest;
 
   attachGlobalListeners(worker);
 

@@ -23,7 +23,10 @@ import {
   reloadModel,
   preloadModel,
   modelEvents,
+  transcribeLocal,
 } from "./services/local-whisper";
+import { transcribeCloud } from "./services/cloud-whisper";
+import { wrapPcmAsWav } from "./services/wav";
 import { join } from "path";
 import { existsSync, mkdirSync } from "fs";
 
@@ -173,6 +176,18 @@ export function registerIpcHandlers(
     if (!existsSync(modelPath)) return { status: "error", reason: "model-not-found" };
     preloadModel(modelsDir, s.local.modelId);
     return { status: "loading" };
+  });
+
+  // ── Transcribe an uploaded audio file ──
+  // Renderer decodes/resamples to 16 kHz mono Int16 PCM and ships the raw bytes here.
+  ipcMain.handle("transcribe:pcm", async (_e, pcm16: ArrayBuffer) => {
+    const wavBuffer = wrapPcmAsWav(Buffer.from(pcm16));
+    const s = getSettings();
+    const text =
+      s.provider === "cloud"
+        ? await transcribeCloud(wavBuffer, s.language, s.cloud)
+        : await transcribeLocal(wavBuffer, modelsDir, s.local.modelId, s.language);
+    return { text, provider: s.provider };
   });
 
   // Broadcast runtime status changes to all renderer windows

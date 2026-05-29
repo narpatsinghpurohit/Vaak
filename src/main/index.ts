@@ -30,6 +30,7 @@ let settings: Settings;
 let tray: Tray | null = null;
 let settingsWindow: BrowserWindow | null = null;
 let historyWindow: BrowserWindow | null = null;
+let transcribeWindow: BrowserWindow | null = null;
 let logWindow: BrowserWindow | null = null;
 
 const MODELS_DIR = () => {
@@ -136,6 +137,7 @@ function updateTrayMenu() {
     { label: modelExists ? "Model: Ready" : "Model not found!", enabled: false },
     { type: "separator" },
     { label: "History", accelerator: settings.historyHotkey, click: () => toggleHistoryWindow() },
+    { label: "Transcribe File...", click: () => openTranscribeWindow() },
     { label: "Settings...", click: () => openSettingsWindow() },
     { type: "separator" },
     { label: "View Logs...", click: () => openLogWindow() },
@@ -404,5 +406,35 @@ function toggleHistoryWindow() {
 
   historyWindow.on("closed", () => {
     historyWindow = null;
+  });
+}
+
+// ── Transcribe Window ──
+
+function openTranscribeWindow() {
+  if (transcribeWindow) {
+    transcribeWindow.focus();
+    return;
+  }
+
+  transcribeWindow = new BrowserWindow({
+    title: "Vaak — Transcribe File",
+    width: 600,
+    height: 500,
+    webPreferences: {
+      preload: join(__dirname, "../preload/index.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  if (process.env.VITE_DEV_SERVER_URL) {
+    transcribeWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}#transcribe`);
+  } else {
+    transcribeWindow.loadFile(join(__dirname, "../renderer/index.html"), { hash: "transcribe" });
+  }
+
+  transcribeWindow.on("closed", () => {
+    transcribeWindow = null;
   });
 }

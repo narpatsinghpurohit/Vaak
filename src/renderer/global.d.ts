@@ -54,9 +54,6 @@ interface ModelRuntimeStatus {
   modelId: string | null;
   modelPath: string | null;
   gpuRequested: boolean;
-  metalShaderAvailable: boolean;
-  metalShaderCopied: boolean;
-  metalShaderDest: string | null;
   loadStartedAt: number | null;
   loadedAt: number | null;
   loadDurationMs: number | null;
@@ -89,6 +86,7 @@ interface VoicePasteApi {
   offloadModelRuntime: () => Promise<{ status: string }>;
   reloadModelRuntime: () => Promise<{ status: string; reason?: string }>;
   onModelRuntimeStatus: (callback: (data: ModelRuntimeStatus) => void) => () => void;
+  transcribeAudioPcm: (pcm16: ArrayBuffer) => Promise<{ text: string; provider: string }>;
 }
 
 interface Window {

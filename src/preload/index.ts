@@ -35,6 +35,11 @@ const api = {
   checkAccessibility: () => ipcRenderer.invoke("accessibility:check") as Promise<boolean>,
   requestAccessibility: () => ipcRenderer.invoke("accessibility:request") as Promise<boolean>,
 
+  // Transcribe an uploaded audio file. Caller resamples to 16 kHz mono Int16 PCM
+  // and passes the underlying ArrayBuffer.
+  transcribeAudioPcm: (pcm16: ArrayBuffer) =>
+    ipcRenderer.invoke("transcribe:pcm", pcm16) as Promise<{ text: string; provider: string }>,
+
   // Events from main
   onDownloadProgress: (callback: (data: any) => void) => {
     const handler = (_e: any, data: any) => callback(data);

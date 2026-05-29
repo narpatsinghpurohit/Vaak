@@ -1,0 +1,134 @@
+.transcribe-root {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100vh;
+}
+
+.transcribe-drop {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 28px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.transcribe-drop:hover:not(.busy) {
+  border-color: var(--accent);
+}
+
+.transcribe-drop.drag-over {
+  border-color: var(--accent);
+  background: var(--highlight);
+}
+
+.transcribe-drop.busy {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.transcribe-drop-label {
+  font-weight: 500;
+  font-size: 14px;
+  margin-bottom: 4px;
+  word-break: break-all;
+}
+
+.transcribe-drop-hint {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.transcribe-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+.transcribe-status.state-done {
+  color: var(--success);
+}
+
+.spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: transcribe-spin 0.8s linear infinite;
+}
+
+@keyframes transcribe-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.transcribe-error {
+  background: var(--danger-bg);
+  color: var(--danger);
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.transcribe-empty {
+  padding: 12px;
+  color: var(--fg-muted);
+  font-style: italic;
+  text-align: center;
+}
+
+.transcribe-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+}
+
+.transcribe-text {
+  flex: 1;
+  min-height: 120px;
+  resize: none;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  outline: none;
+}
+
+.transcribe-text:focus {
+  border-color: var(--accent);
+}
+
+.transcribe-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.transcribe-actions button {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.transcribe-actions button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}

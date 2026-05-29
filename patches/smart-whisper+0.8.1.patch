@@ -1,37 +1,88 @@
+diff --git a/node_modules/smart-whisper/dist/build.js b/node_modules/smart-whisper/dist/build.js
+index a70a92e..c654faa 100644
+--- a/node_modules/smart-whisper/dist/build.js
++++ b/node_modules/smart-whisper/dist/build.js
+@@ -51,6 +51,29 @@ function config() {
+     };
+   }
+   const COMPUTE_BACKEND = (_a = process.env.COMPUTE_BACKEND) != null ? _a : infer_backend();
++  // Vaak patch: assemble the Metal shader (ggml-metal.metal, already self-contained
++  // in this whisper.cpp version) into an object exporting _ggml_metallib_start/_end,
++  // which ggml-metal.m reads when built with GGML_METAL_EMBED_LIBRARY. Runs at
++  // node-gyp configure time (libraries getter) on a machine with the Xcode toolchain.
++  function embed_metal_library() {
++    const fs = require("fs");
++    const cp = require("child_process");
++    const path = require("path");
++    const root = path.join(__dirname, "..");
++    const metal = path.join(root, "whisper.cpp/ggml/src/ggml-metal.metal");
++    const asm = path.join(root, "whisper.cpp/ggml/src/ggml-metal-embed.s");
++    const obj = path.join(root, "whisper.cpp/ggml/src/ggml-metal-embed.o");
++    const asm_src =
++      ".section __DATA,__ggml_metallib\n" +
++      ".globl _ggml_metallib_start\n" +
++      "_ggml_metallib_start:\n" +
++      '.incbin "' + metal + '"\n' +
++      ".globl _ggml_metallib_end\n" +
++      "_ggml_metallib_end:\n";
++    fs.writeFileSync(asm, asm_src);
++    cp.execSync("cc -c " + JSON.stringify(asm) + " -o " + JSON.stringify(obj));
++    return JSON.stringify(obj);
++  }
+   const cfg2 = {
+     sources: [
+       "whisper.cpp/src/whisper.cpp",
+@@ -74,10 +97,16 @@ function config() {
+       cfg2.sources.push("whisper.cpp/ggml/src/ggml-metal.m");
+       cfg2.defines.push("GGML_USE_ACCELERATE");
+       cfg2.defines.push("GGML_USE_METAL");
++      // Vaak patch: embed the Metal shader into the binary (like llama.cpp/LM
++      // Studio) so Metal works with zero runtime file/env lookups. Without this
++      // the .node has no embedded metallib and falls back to GGML_METAL_PATH_RESOURCES
++      // → ggml-metal.metal on disk, which breaks in packaged/read-only contexts.
++      cfg2.defines.push("GGML_METAL_EMBED_LIBRARY");
+       cfg2.libraries.push('"-framework Foundation"');
+       cfg2.libraries.push('"-framework Accelerate"');
+       cfg2.libraries.push('"-framework Metal"');
+       cfg2.libraries.push('"-framework MetalKit"');
++      cfg2.libraries.push(embed_metal_library());
+       break;
+     }
+     case "openblas": {
 diff --git a/node_modules/smart-whisper/src/binding/model.cc b/node_modules/smart-whisper/src/binding/model.cc
-index 61e5366..120b038 100644
+index 902f888..d65fb50 100644
 --- a/node_modules/smart-whisper/src/binding/model.cc
 +++ b/node_modules/smart-whisper/src/binding/model.cc
-@@ -7,7 +7,11 @@ class LoadModelWorker : public Napi::AsyncWorker {
-         : AsyncWorker(callback), model_path(model_path), params(params) {}
+@@ -7,7 +7,11 @@ class LoadModelWorker : public PromiseWorker {
+         : PromiseWorker(env), model_path(model_path), params(params) {}
  
      void Execute() override {
 -        context = whisper_init_from_file_with_params_no_state(model_path.c_str(), params);
 +        // Vaak patch: use _with_params (WITH state) instead of _no_state so the
 +        // context carries a reusable internal state. whisper_full() will then
 +        // reuse it across transcribes, avoiding per-call Metal backend init and
-+        // 370 MB of buffer re-allocation. Huge speedup on short dictation.
++        // buffer re-allocation. Huge speedup on short dictation.
 +        context = whisper_init_from_file_with_params(model_path.c_str(), params);
          if (context == nullptr) {
              SetError("Failed to initialize whisper context");
          }
-@@ -37,7 +41,10 @@ Napi::Value LoadModel(const Napi::CallbackInfo &info) {
+@@ -99,7 +103,10 @@ Napi::Value WhisperModel::Load(const Napi::CallbackInfo &info) {
  
      std::string model_path = info[0].As<Napi::String>();
  
--    struct whisper_context_params params;
+-    whisper_context_params params;
 +    // Vaak patch: start from whisper.cpp's defaults instead of leaving the
 +    // struct uninitialized — gpu_device, flash_attn, dtw_* etc. were reading
 +    // garbage stack memory previously.
-+    struct whisper_context_params params = whisper_context_default_params();
-     params.use_gpu = info[1].As<Napi::Boolean>();
++    whisper_context_params params = whisper_context_default_params();
+     params.use_gpu = info.Length() == 2 ? info[1].As<Napi::Boolean>() : true;
  
-     Napi::Function callback = info[2].As<Napi::Function>();
+     auto worker = new LoadModelWorker(env, model_path, params);
 diff --git a/node_modules/smart-whisper/src/binding/transcribe.cc b/node_modules/smart-whisper/src/binding/transcribe.cc
-index 6f0d464..6008c88 100644
+index 9fc0781..471aa4d 100644
 --- a/node_modules/smart-whisper/src/binding/transcribe.cc
 +++ b/node_modules/smart-whisper/src/binding/transcribe.cc
-@@ -124,7 +124,6 @@ class TranscribeWorker : public Napi::AsyncProgressQueueWorker<int> {
+@@ -161,7 +161,6 @@ class TranscribeWorker : public Napi::AsyncProgressQueueWorker<int> {
            params(params),
            smart_params(smart_params) {
          this->progress_callback.Reset(progress_callback, 1);
@@ -39,7 +90,7 @@ index 6f0d464..6008c88 100644
      }
  
      ~TranscribeWorker() {
-@@ -136,26 +135,27 @@ class TranscribeWorker : public Napi::AsyncProgressQueueWorker<int> {
+@@ -173,26 +172,27 @@ class TranscribeWorker : public Napi::AsyncProgressQueueWorker<int> {
          if (params.language != nullptr) {
              free((void*)params.language);
          }
@@ -59,8 +110,8 @@ index 6f0d464..6008c88 100644
 -                                         int n_new, void* user_data) {
 +        // Vaak patch: use context's internal state (created once at load) so we
 +        // skip the per-transcribe whisper_init_state() which otherwise triggers
-+        // Metal backend re-init, shader recompilation, and 370 MB of buffer
-+        // allocation. On M4 this drops per-call overhead from ~1200 ms to ~50 ms.
++        // Metal backend re-init, shader recompilation, and large buffer
++        // allocation. Drops per-call overhead from ~1200 ms to ~50 ms.
 +        params.new_segment_callback = [](struct whisper_context* ctx, struct whisper_state* /*state*/,
 +                                         int /*n_new*/, void* user_data) {
              const ExecutionProgress& progress = *(ExecutionProgress*)user_data;
@@ -76,7 +127,7 @@ index 6f0d464..6008c88 100644
          if (err != 0) {
              SetError("whisper_full operation failed");
          }
-@@ -170,25 +170,26 @@ class TranscribeWorker : public Napi::AsyncProgressQueueWorker<int> {
+@@ -207,25 +207,26 @@ class TranscribeWorker : public Napi::AsyncProgressQueueWorker<int> {
  
          int i = (*data);
  
@@ -113,7 +164,16 @@ index 6f0d464..6008c88 100644
                  token_object.Set("id", Napi::Number::New(Env(), token.id));
                  token_object.Set("p", Napi::Number::New(Env(), token.p));
                  tokens_array.Set(j, token_object);
-@@ -218,28 +219,29 @@ class TranscribeWorker : public Napi::AsyncProgressQueueWorker<int> {
+@@ -247,7 +248,7 @@ class TranscribeWorker : public Napi::AsyncProgressQueueWorker<int> {
+ 
+             segment.Set(
+                 "lang",
+-                Napi::String::New(Env(), whisper_lang_str(whisper_full_lang_id_from_state(state))));
++                Napi::String::New(Env(), whisper_lang_str(whisper_full_lang_id(context))));
+             segment.Set("confidence", Napi::Number::New(Env(), confidence));
+             segment.Set("tokens", tokens_array);
+         }
+@@ -258,28 +259,29 @@ class TranscribeWorker : public Napi::AsyncProgressQueueWorker<int> {
      void OnOK() override {
          Napi::HandleScope scope(Env());
  
@@ -153,8 +213,17 @@ index 6f0d464..6008c88 100644
 +                        Napi::String::New(Env(), whisper_full_get_token_text(context, i, j)));
                      token_object.Set("id", Napi::Number::New(Env(), token.id));
                      token_object.Set("p", Napi::Number::New(Env(), token.p));
-                     tokens_array.Set(j, token_object);
-@@ -271,7 +273,7 @@ class TranscribeWorker : public Napi::AsyncProgressQueueWorker<int> {
+                     if (params.token_timestamps) {
+@@ -306,7 +308,7 @@ class TranscribeWorker : public Napi::AsyncProgressQueueWorker<int> {
+ 
+                 segment.Set("lang",
+                             Napi::String::New(
+-                                Env(), whisper_lang_str(whisper_full_lang_id_from_state(state))));
++                                Env(), whisper_lang_str(whisper_full_lang_id(context))));
+                 segment.Set("confidence", Napi::Number::New(Env(), confidence));
+                 segment.Set("tokens", tokens_array);
+             }
+@@ -319,7 +321,7 @@ class TranscribeWorker : public Napi::AsyncProgressQueueWorker<int> {
  
     private:
      whisper_context*                       context;
