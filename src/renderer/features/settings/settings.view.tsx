@@ -452,6 +452,25 @@ export function SettingsView({
           Requires Accessibility permission — macOS will prompt you to grant it.
         </div>
       </div>
+
+      {/* Notifications */}
+      <div className="section">
+        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={settings.showNotifications}
+            onChange={(e) =>
+              onFieldChange((s) => ({ ...s, showNotifications: e.target.checked }))
+            }
+            style={{ width: "auto", cursor: "pointer" }}
+          />
+          Show notifications
+        </label>
+        <div className="hint">
+          Shows a notification with the transcribed text after each dictation.
+          Error and permission alerts are always shown.
+        </div>
+      </div>
     </div>
   );
 }

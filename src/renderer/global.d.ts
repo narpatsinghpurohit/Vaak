@@ -12,6 +12,7 @@ interface Settings {
   hotkey: string;
   historyHotkey: string;
   autoPaste: boolean;
+  showNotifications: boolean;
 }
 
 interface HistoryEntry {

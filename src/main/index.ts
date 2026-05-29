@@ -234,11 +234,13 @@ async function toggleRecording() {
         } catch (dbErr: unknown) {
           console.error("History save failed:", dbErr instanceof Error ? dbErr.message : dbErr);
         }
-        new Notification({
-          title: "Vaak",
-          body: text.length > 100 ? text.slice(0, 100) + "..." : text,
-          silent: true,
-        }).show();
+        if (settings.showNotifications) {
+          new Notification({
+            title: "Vaak",
+            body: text.length > 100 ? text.slice(0, 100) + "..." : text,
+            silent: true,
+          }).show();
+        }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
