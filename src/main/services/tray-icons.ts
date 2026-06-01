@@ -172,7 +172,7 @@ export function getIdleIcon(): NativeImage {
 
 // ── Animation controller ──
 
-type AnimState = "idle" | "recording" | "transcribing";
+type AnimState = "idle" | "recording" | "transcribing" | "streaming";
 
 let currentState: AnimState = "idle";
 let animTimer: ReturnType<typeof setInterval> | null = null;
@@ -202,6 +202,12 @@ export function setTrayState(state: AnimState): void {
       animFrame = (animFrame + 1) % 3;
       applyIcon();
     }, 350);
+  } else if (state === "streaming") {
+    // Live dictation — same wave frames, slightly faster to read as "active".
+    animTimer = setInterval(() => {
+      animFrame = (animFrame + 1) % 3;
+      applyIcon();
+    }, 250);
   } else if (state === "transcribing") {
     // Cycle typing frames
     animTimer = setInterval(() => {
@@ -216,6 +222,7 @@ function applyIcon(): void {
 
   switch (currentState) {
     case "recording":
+    case "streaming":
       trayRef.setImage(icons.recording[animFrame % 3]);
       break;
     case "transcribing":

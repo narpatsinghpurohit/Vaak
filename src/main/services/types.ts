@@ -1,3 +1,12 @@
+export interface StreamingTuning {
+  /** How much new audio (ms) to accumulate before re-transcribing. */
+  stepMs: number;
+  /** Hard cap on the rolling buffer (s); trimmed to last commit beyond this. */
+  maxBufferSec: number;
+  /** Silence (ms) that marks an utterance boundary → flush the trailing tail. */
+  pauseFlushMs: number;
+}
+
 export interface Settings {
   provider: "local" | "cloud";
   cloud: {
@@ -13,6 +22,10 @@ export interface Settings {
   historyHotkey: string;
   autoPaste: boolean;
   showNotifications: boolean;
+  // "batch": record → stop → transcribe whole clip → paste (the classic flow).
+  // "streaming": transcribe live word-by-word into the focused input as you speak.
+  mode: "batch" | "streaming";
+  streaming: StreamingTuning;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -30,6 +43,12 @@ export const DEFAULT_SETTINGS: Settings = {
   historyHotkey: "CommandOrControl+Shift+H",
   autoPaste: false,
   showNotifications: true,
+  mode: "streaming",
+  streaming: {
+    stepMs: 800,
+    maxBufferSec: 12,
+    pauseFlushMs: 700,
+  },
 };
 
 export interface HistoryEntry {

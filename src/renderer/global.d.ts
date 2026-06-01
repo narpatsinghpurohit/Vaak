@@ -1,3 +1,9 @@
+interface StreamingTuning {
+  stepMs: number;
+  maxBufferSec: number;
+  pauseFlushMs: number;
+}
+
 interface Settings {
   provider: "local" | "cloud";
   cloud: {
@@ -13,6 +19,8 @@ interface Settings {
   historyHotkey: string;
   autoPaste: boolean;
   showNotifications: boolean;
+  mode: "batch" | "streaming";
+  streaming: StreamingTuning;
 }
 
 interface HistoryEntry {

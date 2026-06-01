@@ -817,6 +817,11 @@ abbrev@^3.0.0:
   resolved "https://registry.npmjs.org/abbrev/-/abbrev-3.0.1.tgz"
   integrity sha512-AO2ac6pjRB3SJmGJo+v5/aK6Omggp6fsLrs6wN9bd35ulu4cCwaAU9+7ZhXjeqHVkaHThLuzH0nZr0YpCDhygg==
 
+adm-zip@^0.5.16:
+  version "0.5.17"
+  resolved "https://registry.npmjs.org/adm-zip/-/adm-zip-0.5.17.tgz"
+  integrity sha512-+Ut8d9LLqwEvHHJl1+PIHqoyDxFgVN847JTVM3Izi3xHDWPE4UtzzXysMZQs64DMcrJfBeS/uoEP4AD3HQHnQQ==
+
 agent-base@^6.0.2, agent-base@6:
   version "6.0.2"
   resolved "https://registry.npmjs.org/agent-base/-/agent-base-6.0.2.tgz"
@@ -2047,7 +2052,17 @@ global-agent@^3.0.0:
     semver "^7.3.2"
     serialize-error "^7.0.1"
 
-globalthis@^1.0.1:
+global-agent@^4.1.3:
+  version "4.1.3"
+  resolved "https://registry.npmjs.org/global-agent/-/global-agent-4.1.3.tgz"
+  integrity sha512-KUJEViiuFT3I97t+GYMikLPJS2Lfo/S2F+DQuBWzuzaMPnvt5yyZePzArx36fBzpGTxZjIpDbXLeySLgh+k76g==
+  dependencies:
+    globalthis "^1.0.2"
+    matcher "^4.0.0"
+    semver "^7.3.5"
+    serialize-error "^8.1.0"
+
+globalthis@^1.0.1, globalthis@^1.0.2:
   version "1.0.4"
   resolved "https://registry.npmjs.org/globalthis/-/globalthis-1.0.4.tgz"
   integrity sha512-DpLKbNU4WylpxJykQujfCcwYWiV/Jhm50Goo0wrVILAv5jOr9d+H+UR3PhSCD2rCCEIg0uc+G+muBTwD54JhDQ==
@@ -2541,6 +2556,13 @@ matcher@^3.0.0:
   dependencies:
     escape-string-regexp "^4.0.0"
 
+matcher@^4.0.0:
+  version "4.0.0"
+  resolved "https://registry.npmjs.org/matcher/-/matcher-4.0.0.tgz"
+  integrity sha512-S6x5wmcDmsDRRU/c2dkccDwQPXoFczc5+HpQ2lON8pnvHlnvHAHj5WlLVvw6n6vNyHuVugYrFohYxbS+pvFpKQ==
+  dependencies:
+    escape-string-regexp "^4.0.0"
+
 math-intrinsics@^1.1.0:
   version "1.1.0"
   resolved "https://registry.npmjs.org/math-intrinsics/-/math-intrinsics-1.1.0.tgz"
@@ -2914,6 +2936,20 @@ onetime@^5.1.0:
   integrity sha512-kbpaSSGJTWdAY5KPVeMOKXSrPtr8C8C7wodJbcsd51jRnmD+GZu8Y0VoU6Dm5Z4vWr0Ig/1NKuWRKf7j5aaYSg==
   dependencies:
     mimic-fn "^2.1.0"
+
+onnxruntime-common@1.26.0:
+  version "1.26.0"
+  resolved "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.26.0.tgz"
+  integrity sha512-qVyMR4lcWgbkc4getFV+GQijsTnbg/siteoqcDwa3sI/LxbrMSNw4ePyvCq/ymdQaRomCA7YuWmhzsswxvymdw==
+
+onnxruntime-node@1.26.0:
+  version "1.26.0"
+  resolved "https://registry.npmjs.org/onnxruntime-node/-/onnxruntime-node-1.26.0.tgz"
+  integrity sha512-OHl6PiOEOqxaLHL0N9eFrbzS7IGmu3BtJNH3RTEnRAheCIkfc3gjcjl4sGcjp9C22ZC9YTquDOxSdT/stBQ6BQ==
+  dependencies:
+    adm-zip "^0.5.16"
+    global-agent "^4.1.3"
+    onnxruntime-common "1.26.0"
 
 open@^7.4.2:
   version "7.4.2"
@@ -3342,6 +3378,13 @@ serialize-error@^7.0.1:
   dependencies:
     type-fest "^0.13.1"
 
+serialize-error@^8.1.0:
+  version "8.1.0"
+  resolved "https://registry.npmjs.org/serialize-error/-/serialize-error-8.1.0.tgz"
+  integrity sha512-3NnuWfM6vBYoy5gZFvHiYsVbafvI9vZv/+jlIigFn4oP4zjNPK3LhcY0xSCgeb1a5L8jO71Mit9LlNoi2UfDDQ==
+  dependencies:
+    type-fest "^0.20.2"
+
 set-blocking@^2.0.0:
   version "2.0.0"
   resolved "https://registry.npmjs.org/set-blocking/-/set-blocking-2.0.0.tgz"
@@ -3421,7 +3464,7 @@ smart-buffer@^4.0.2, smart-buffer@^4.2.0:
   resolved "https://registry.npmjs.org/smart-buffer/-/smart-buffer-4.2.0.tgz"
   integrity sha512-94hK0Hh8rPqQl2xXc3HsaBoOXKV20MToPkcXvwbISWLEs+64sBq5kFgn2kJDHb1Pry9yrP0dxrCI9RRci7RXKg==
 
-smart-whisper@^0.8.1:
+smart-whisper@0.8.1:
   version "0.8.1"
   resolved "https://registry.npmjs.org/smart-whisper/-/smart-whisper-0.8.1.tgz"
   integrity sha512-0DnhD6Hq7kTpWAJxv057o8rkcZ2Sv2/ZpJZJjj/DT+8Ll/zH5EHQM1lSwk+W15AvfDPD3K2ku+MD2KCXD51z5A==
@@ -3685,6 +3728,11 @@ type-fest@^0.13.1:
   version "0.13.1"
   resolved "https://registry.npmjs.org/type-fest/-/type-fest-0.13.1.tgz"
   integrity sha512-34R7HTnG0XIJcBSn5XhDd7nNFPRcXYRZrBB2O2jdKqYODldSzBAqzsWoZYYvduky73toYS/ESqxPvkDf/F0XMg==
+
+type-fest@^0.20.2:
+  version "0.20.2"
+  resolved "https://registry.npmjs.org/type-fest/-/type-fest-0.20.2.tgz"
+  integrity sha512-Ne+eE4r0/iWnpAxD852z3A+N0Bt5RN//NjJwRd2VFHEmrywxf5vsZlh4R6lixl6B+wz/8d+maTSAkN1FIkI3LQ==
 
 typescript@^5.4.3, typescript@^5.7.0:
   version "5.9.3"

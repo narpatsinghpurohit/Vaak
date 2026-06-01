@@ -270,6 +270,42 @@ export function SettingsView({
     <div style={{ padding: 24 }}>
       <h2 style={{ fontSize: 20, marginBottom: 20 }}>Vaak Settings</h2>
 
+      {/* Mode */}
+      <div className="section">
+        <label>Dictation Mode</label>
+        <div className="chip-group">
+          <button
+            className={`chip ${settings.mode === "streaming" ? "active" : ""}`}
+            onClick={async () => {
+              const hasAccess = await window.voicePaste.checkAccessibility();
+              if (!hasAccess) await window.voicePaste.requestAccessibility();
+              onFieldChange((s) => ({ ...s, mode: "streaming" }));
+            }}
+          >
+            Live (streaming)
+          </button>
+          <button
+            className={`chip ${settings.mode === "batch" ? "active" : ""}`}
+            onClick={() => onFieldChange((s) => ({ ...s, mode: "batch" }))}
+          >
+            Classic (paste on stop)
+          </button>
+        </div>
+        <div className="hint">
+          {settings.mode === "streaming" ? (
+            <>
+              Text appears word-by-word in the focused field as you speak; press the hotkey again to
+              stop. Uses the local model and requires Accessibility permission.
+              {settings.provider === "cloud" && (
+                <> <strong>Live mode runs on the local model</strong> — the Cloud provider is used only in Classic mode.</>
+              )}
+            </>
+          ) : (
+            <>Records until you press the hotkey again, then transcribes the whole clip and pastes it.</>
+          )}
+        </div>
+      </div>
+
       {/* Provider */}
       <div className="section">
         <label>Provider</label>

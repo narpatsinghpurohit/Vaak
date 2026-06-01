@@ -16,6 +16,9 @@ import type { Settings } from "./services/types";
 import { startRecording, stopRecording, isRecording } from "./services/audio";
 import { transcribeCloud } from "./services/cloud-whisper";
 import { transcribeLocal, preloadModel } from "./services/local-whisper";
+import { startStreamingSession, stopStreamingSession, isStreamingActive } from "./services/streaming";
+import { loadSilero } from "./services/silero";
+import { insertText, ensureAccessibilityForInsertion } from "./services/insertion";
 import { insertHistory } from "./services/history";
 import { registerIpcHandlers } from "./ipc";
 import { initLogger, getLogsText } from "./services/logger";
@@ -78,6 +81,12 @@ app.whenReady().then(async () => {
     } else {
       console.warn(`Model not found: ${modelPath}`);
     }
+  }
+
+  // Warm up the Silero VAD so it's ready before the first live dictation
+  // (load is lazy + guarded; failure just falls back to the RMS detector).
+  if (settings.mode === "streaming") {
+    loadSilero().catch(() => {});
   }
 
   console.log("Vaak v0.1 started — provider:", settings.provider);
@@ -192,10 +201,102 @@ function simulatePaste(): Promise<void> {
   });
 }
 
+// ── Streaming Flow (live word-by-word dictation) ──
+
+let streamToggleBusy = false;
+
+async function toggleStreaming() {
+  // Guard against a second hotkey press landing mid start/stop.
+  if (streamToggleBusy) {
+    console.log("[stream] toggle ignored — busy");
+    return;
+  }
+  streamToggleBusy = true;
+  try {
+    await doToggleStreaming();
+  } finally {
+    streamToggleBusy = false;
+  }
+}
+
+async function doToggleStreaming() {
+  if (isStreamingActive()) {
+    console.log("Stopping streaming session...");
+    setTrayState("transcribing");
+    try {
+      const { fullText, durationSecs } = await stopStreamingSession();
+      console.log(`Streaming stopped: ${durationSecs.toFixed(1)}s, "${fullText.slice(0, 60)}"`);
+      if (fullText) {
+        try {
+          insertHistory(fullText, settings.provider, settings.language, durationSecs);
+        } catch (dbErr: unknown) {
+          console.error("History save failed:", dbErr instanceof Error ? dbErr.message : dbErr);
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Streaming stop FAILED:", msg);
+      new Notification({ title: "Vaak — Error", body: msg, silent: false }).show();
+    }
+    setTrayState("idle");
+    updateTrayMenu();
+    return;
+  }
+
+  // Start a streaming session.
+  const modelPath = join(MODELS_DIR(), settings.local.modelId);
+  if (!existsSync(modelPath)) {
+    new Notification({
+      title: "Vaak — Model not found",
+      body: `Download ${settings.local.modelId} in Settings to use live dictation.`,
+      silent: false,
+    }).show();
+    return;
+  }
+  // Typing into the focused app needs Accessibility — prompt and bail if missing
+  // (a session without it would record but type nothing).
+  if (!ensureAccessibilityForInsertion()) {
+    console.warn("[stream] no Accessibility permission — not starting");
+    return;
+  }
+
+  console.log("Starting streaming session...");
+  try {
+    setTrayState("streaming");
+    setTimeout(() => updateTrayMenu(), 500);
+    startStreamingSession(
+      {
+        modelsDir: MODELS_DIR(),
+        modelId: settings.local.modelId,
+        language: settings.language,
+        tuning: settings.streaming,
+      },
+      {
+        onCommit: (text) => {
+          void insertText(text);
+        },
+        // onTentative / onLevel drive the Phase 2 HUD; no-ops for now.
+        onTentative: () => {},
+        onLevel: () => {},
+      },
+    );
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Failed to start streaming:", msg);
+    setTrayState("idle");
+    updateTrayMenu();
+  }
+}
+
 // ── Recording Flow ──
 
 async function toggleRecording() {
   console.log("toggleRecording called — isRecording:", isRecording());
+
+  // Live streaming is local-only in Phase 1 (cloud would need chunked uploads).
+  if (settings.mode === "streaming" && settings.provider === "local") {
+    return toggleStreaming();
+  }
 
   if (isRecording()) {
     console.log("Stopping recording...");

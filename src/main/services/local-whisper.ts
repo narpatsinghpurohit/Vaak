@@ -101,6 +101,35 @@ function log(text) {
   try { parentPort.postMessage({ type: "log", text: "[worker] " + text }); } catch(e) {}
 }
 
+// Trim TRAILING silence from a Float32 PCM clip. Whisper was trained on YouTube
+// and pads silent endings with phantom sign-offs ("Bye", "Thank you", "thanks for
+// watching"); if it never sees the silent tail it can't invent one. Scan 20 ms
+// frames, find the last frame with speech energy, keep up to ~200 ms past it.
+// Only trims the END (leading silence is far less dangerous and clipping a soft
+// first word is worse). Returns the original clip if there's nothing to trim.
+function trimTrailingSilence(pcm) {
+  const FR = 320; // 20 ms @ 16 kHz
+  const nFrames = Math.floor(pcm.length / FR);
+  if (nFrames < 3) return pcm;
+  let peak = 0;
+  const rms = new Float32Array(nFrames);
+  for (let f = 0; f < nFrames; f++) {
+    let s = 0; const base = f * FR;
+    for (let j = 0; j < FR; j++) { const v = pcm[base + j]; s += v * v; }
+    const r = Math.sqrt(s / FR);
+    rms[f] = r;
+    if (r > peak) peak = r;
+  }
+  // Speech threshold relative to the clip's own peak, with an absolute floor.
+  const thr = Math.max(0.01, peak * 0.10);
+  let last = -1;
+  for (let f = nFrames - 1; f >= 0; f--) { if (rms[f] > thr) { last = f; break; } }
+  if (last < 0) return pcm; // whole clip is silence — let whisper return blank
+  const keep = Math.min(pcm.length, (last + 1) * FR + 3200); // +200 ms tail pad
+  if (keep >= pcm.length - FR) return pcm; // nothing meaningful to trim
+  return pcm.subarray(0, keep);
+}
+
 parentPort.on("message", async (msg) => {
   if (msg.type === "load") {
     try {
@@ -166,7 +195,11 @@ parentPort.on("message", async (msg) => {
 
       if (pcm.length < 16000) { parentPort.postMessage({ type: "result", text: "" }); return; }
 
-      const audioSecs = pcm.length / 16000;
+      // Strip the silent tail before decoding (see trimTrailingSilence) so whisper
+      // can't pad the end with phantom sign-offs ("Bye", "Thank you", "thanks for
+      // watching"). Same root-cause fix as the streaming path.
+      const clip = trimTrailingSilence(pcm);
+      const audioSecs = clip.length / 16000;
       const t0 = Date.now();
       // Speed tuning for Apple Silicon + Metal:
       //   strategy=0 (GREEDY)          — 2-5x faster than smart-whisper's BEAM_SEARCH default
@@ -174,8 +207,12 @@ parentPort.on("message", async (msg) => {
       //                                       causes the invisible "sometimes slow" behavior
       //   no_context=true              — don't carry prior segments across clips
       //   n_threads=${WHISPER_THREADS} — mel spectrogram parallelism on P-cores
-      //   suppress_blank=true, suppress_non_speech_tokens=true — skip filler tokens
-      const task = await whisper.transcribe(pcm, {
+      //   suppress_blank=true          — don't let a segment START on a blank token
+      //   suppress_non_speech_tokens=true — mask bracket/symbol tokens so ambient
+      //     sound becomes "" instead of an annotation like "(birds chirping)".
+      //     (It can't stop WORD phantoms like "Bye" — the trailing-silence trim
+      //     above handles those — but it does stop the bracketed sound labels.)
+      const task = await whisper.transcribe(clip, {
         language: msg.language === "auto" ? "auto" : msg.language,
         strategy: 0,
         no_context: true,
@@ -200,6 +237,71 @@ parentPort.on("message", async (msg) => {
       });
     } catch (err) {
       parentPort.postMessage({ type: "result", text: "", error: err.message });
+    }
+  }
+
+  if (msg.type === "transcribeStream") {
+    try {
+      if (!whisper) {
+        parentPort.postMessage({ type: "streamResult", words: [], error: "Model not loaded" });
+        return;
+      }
+      // Raw Float32 PCM (16 kHz mono) is sent directly — no WAV wrapping.
+      const pcm = new Float32Array(msg.pcm);
+      // Whisper's mel front-end needs a minimum amount of audio; below ~0.5 s the
+      // hypotheses are noise. LocalAgreement upstream won't commit them anyway, so
+      // just skip the decode and save Metal cycles.
+      if (pcm.length < 8000) {
+        parentPort.postMessage({ type: "streamResult", words: [] });
+        return;
+      }
+
+      const audioSecs = pcm.length / 16000;
+      const t0 = Date.now();
+      // CRITICAL: no_context:true. smart-whisper is patched to REUSE the context's
+      // internal state across calls (model.cc), so prompt_past survives between
+      // transcribes. We re-decode an OVERLAPPING rolling buffer every ~0.8s, so
+      // carrying prior tokens (no_context:false) feeds each pass the previous
+      // pass's words as context → greedy repetition loop ("So. So. So."). Clearing
+      // prompt_past each call (whisper.cpp: if(no_context) prompt_past.clear()) makes
+      // every re-decode independent, exactly like the batch path.
+      //
+      // We also do NOT pass initial_prompt: the committed audio is still inside the
+      // rolling buffer, so prompting with the committed TEXT would double-count it
+      // (prompt + audio = the same words) and itself induce repetition. The buffer's
+      // own audio is the context.
+      //
+      //   token_timestamps + split_on_word + max_len:1 — ONE word per segment, each
+      //     carrying from/to (ms) + confidence — the word-timestamp trick.
+      //   format:"detail" — required for per-word confidence.
+      const task = await whisper.transcribe(pcm, {
+        language: msg.language === "auto" ? "auto" : msg.language,
+        strategy: 0,
+        no_context: true,
+        temperature: 0,
+        temperature_inc: 0,
+        n_threads: ${WHISPER_THREADS},
+        token_timestamps: true,
+        split_on_word: true,
+        max_len: 1,
+        format: "detail",
+        suppress_blank: true,
+        suppress_non_speech_tokens: true, // mask "(birds chirping)"-style sound annotations
+        print_progress: false,
+        print_realtime: false,
+        print_timestamps: false,
+      });
+      const segments = await task.result;
+      const elapsedMs = Date.now() - t0;
+      const words = segments
+        .map(s => ({ text: s.text, from: s.from, to: s.to, confidence: s.confidence }))
+        .filter(w => {
+          const t = (w.text || "").trim();
+          return t && t !== "[BLANK_AUDIO]";
+        });
+      parentPort.postMessage({ type: "streamResult", words, elapsedMs, audioSecs });
+    } catch (err) {
+      parentPort.postMessage({ type: "streamResult", words: [], error: err.message });
     }
   }
 });
@@ -390,6 +492,94 @@ export function transcribeLocal(
 
     if (workerReady) {
       sendTranscribe();
+    } else {
+      const modelPath = join(modelsDir, modelId);
+      status.state = "loading";
+      status.modelId = modelId;
+      status.modelPath = modelPath;
+      status.loadStartedAt = Date.now();
+      status.loadedAt = null;
+      status.loadDurationMs = null;
+      status.lastError = null;
+      emitStatus();
+      w.postMessage({ type: "load", modelPath });
+    }
+  });
+}
+
+export interface StreamWord {
+  /** Word text as emitted by whisper (keeps its leading space). */
+  text: string;
+  /** Start timestamp in ms, relative to the start of the PCM buffer passed in. */
+  from: number;
+  /** End timestamp in ms, relative to the start of the PCM buffer passed in. */
+  to: number;
+  /** Average token probability for the word (0–1), when available. */
+  confidence?: number;
+}
+
+/**
+ * Transcribe a Float32 PCM window for streaming. Returns one entry per WORD with
+ * relative ms timestamps (see {@link StreamWord}). Callers MUST serialize calls —
+ * the patched single whisper context cannot run two transcribes at once.
+ */
+export function transcribeLocalStream(
+  pcm: Float32Array,
+  modelsDir: string,
+  modelId: string,
+  language: string,
+): Promise<StreamWord[]> {
+  return new Promise((resolve, reject) => {
+    const w = getWorker();
+
+    // slice() copies into a standalone ArrayBuffer we can hand off (transfer) to
+    // the worker without detaching the caller's view.
+    const ab = pcm.buffer.slice(
+      pcm.byteOffset,
+      pcm.byteOffset + pcm.byteLength,
+    ) as ArrayBuffer;
+
+    const sendTranscribe = (buffer: ArrayBuffer) => {
+      w.postMessage({ type: "transcribeStream", pcm: buffer, language }, [buffer]);
+    };
+
+    const handler = (msg: {
+      type: string;
+      words?: StreamWord[];
+      error?: string;
+      elapsedMs?: number;
+      audioSecs?: number;
+    }) => {
+      if (msg.type === "loaded") {
+        workerReady = true;
+        status.state = "loaded";
+        status.loadedAt = Date.now();
+        status.loadDurationMs = status.loadStartedAt ? status.loadedAt - status.loadStartedAt : null;
+        emitStatus();
+        sendTranscribe(ab);
+      } else if (msg.type === "streamResult") {
+        w.removeListener("message", handler);
+        if (typeof msg.elapsedMs === "number") {
+          status.lastTranscribeMs = msg.elapsedMs;
+          status.lastTranscribeAudioSecs = msg.audioSecs ?? null;
+          emitStatus();
+        }
+        if (msg.error === "Model not loaded") {
+          reject(new Error(msg.error));
+          return;
+        }
+        if (msg.error) console.warn("[stream] decode error:", msg.error);
+        resolve(msg.words ?? []);
+      } else if (msg.type === "error") {
+        w.removeListener("message", handler);
+        reject(new Error(msg.error ?? "Worker error"));
+      }
+    };
+
+    w.on("message", handler);
+
+    if (workerReady) {
+      sendTranscribe(ab);
     } else {
       const modelPath = join(modelsDir, modelId);
       status.state = "loading";
