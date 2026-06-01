@@ -19,8 +19,15 @@ interface Settings {
   historyHotkey: string;
   autoPaste: boolean;
   showNotifications: boolean;
+  inputDevice: string;
   mode: "batch" | "streaming";
   streaming: StreamingTuning;
+}
+
+interface InputDevice {
+  name: string;
+  isDefault: boolean;
+  transport?: string;
 }
 
 interface HistoryEntry {
@@ -85,6 +92,7 @@ interface VoicePasteApi {
   cancelDownload: (filename: string) => Promise<{ status: string }>;
   deleteModel: (filename: string) => Promise<{ status: string }>;
   getModelProgress: (filename: string) => Promise<any>;
+  listInputDevices: () => Promise<InputDevice[]>;
   checkAccessibility: () => Promise<boolean>;
   requestAccessibility: () => Promise<boolean>;
   onDownloadProgress: (callback: (data: DownloadProgress) => void) => () => void;
@@ -96,6 +104,13 @@ interface VoicePasteApi {
   reloadModelRuntime: () => Promise<{ status: string; reason?: string }>;
   onModelRuntimeStatus: (callback: (data: ModelRuntimeStatus) => void) => () => void;
   transcribeAudioPcm: (pcm16: ArrayBuffer) => Promise<{ text: string; provider: string }>;
+  onHudUpdate: (callback: (data: HudUpdate) => void) => () => void;
+}
+
+interface HudUpdate {
+  recording: boolean;
+  level: number; // 0..1 mic level
+  tentative: string; // in-flight (not-yet-committed) words
 }
 
 interface Window {

@@ -6,6 +6,7 @@ import {
   globalShortcut,
   clipboard,
   Notification,
+  screen,
 } from "electron";
 import { join } from "path";
 import { existsSync, mkdirSync } from "fs";
@@ -13,7 +14,7 @@ import { exec, execSync } from "child_process";
 import { systemPreferences } from "electron";
 import { loadSettings, saveSettings, getAppDir } from "./services/settings";
 import type { Settings } from "./services/types";
-import { startRecording, stopRecording, isRecording } from "./services/audio";
+import { startRecording, stopRecording, isRecording, setInputDevice } from "./services/audio";
 import { transcribeCloud } from "./services/cloud-whisper";
 import { transcribeLocal, preloadModel } from "./services/local-whisper";
 import { startStreamingSession, stopStreamingSession, isStreamingActive } from "./services/streaming";
@@ -35,6 +36,7 @@ let settingsWindow: BrowserWindow | null = null;
 let historyWindow: BrowserWindow | null = null;
 let transcribeWindow: BrowserWindow | null = null;
 let logWindow: BrowserWindow | null = null;
+let hudWindow: BrowserWindow | null = null;
 
 const MODELS_DIR = () => {
   const dir = join(getAppDir(), "models");
@@ -45,6 +47,7 @@ const MODELS_DIR = () => {
 // ── App ready ──
 app.whenReady().then(async () => {
   settings = loadSettings();
+  setInputDevice(settings.inputDevice);
 
   // Init logger early so we capture everything
   initLogger(getAppDir());
@@ -57,6 +60,7 @@ app.whenReady().then(async () => {
     () => settings,
     (s) => {
       settings = s;
+      setInputDevice(s.inputDevice);
       saveSettings(s);
       registerHotkeys(); // Re-register in case hotkeys changed
     },
@@ -201,6 +205,117 @@ function simulatePaste(): Promise<void> {
   });
 }
 
+// ── Live Dictation HUD (frameless, non-focusable overlay) ──
+
+const HUD_W = 460;
+const HUD_H = 84;
+let hudLevel = 0;
+let hudTentative = "";
+let hudActive = false;
+let lastHudSend = 0;
+let hudHideTimer: ReturnType<typeof setTimeout> | null = null;
+
+function getHudWindow(): BrowserWindow {
+  if (hudWindow && !hudWindow.isDestroyed()) return hudWindow;
+
+  hudWindow = new BrowserWindow({
+    width: HUD_W,
+    height: HUD_H,
+    show: false,
+    frame: false,
+    transparent: true,
+    backgroundColor: "#00000000",
+    hasShadow: false,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    focusable: false, // CRITICAL — must never steal focus from the target app
+    alwaysOnTop: true,
+    webPreferences: {
+      preload: join(__dirname, "../preload/index.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  // Float above everything (incl. fullscreen apps) on every Space.
+  hudWindow.setAlwaysOnTop(true, "screen-saver");
+  hudWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+  if (process.env.VITE_DEV_SERVER_URL) {
+    hudWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}#hud`);
+  } else {
+    hudWindow.loadFile(join(__dirname, "../renderer/index.html"), { hash: "hud" });
+  }
+
+  // The window loads async; re-push current state once the renderer is ready so
+  // a freshly-created HUD (first session) doesn't miss the opening update.
+  hudWindow.webContents.on("did-finish-load", () => sendHud(hudActive));
+
+  hudWindow.on("closed", () => {
+    hudWindow = null;
+  });
+  return hudWindow;
+}
+
+function positionHud(win: BrowserWindow): void {
+  // Bottom-center of whichever display the cursor is on.
+  const pt = screen.getCursorScreenPoint();
+  const wa = screen.getDisplayNearestPoint(pt).workArea;
+  win.setBounds({
+    x: Math.round(wa.x + (wa.width - HUD_W) / 2),
+    y: Math.round(wa.y + wa.height - HUD_H - 96), // floats above the dock
+    width: HUD_W,
+    height: HUD_H,
+  });
+}
+
+function showHud(): void {
+  if (hudHideTimer) {
+    clearTimeout(hudHideTimer);
+    hudHideTimer = null;
+  }
+  hudLevel = 0;
+  hudTentative = "";
+  hudActive = true;
+  const win = getHudWindow();
+  positionHud(win);
+  win.showInactive(); // show WITHOUT focusing — keystrokes keep going to the target app
+  sendHud(true);
+}
+
+function hideHud(): void {
+  hudActive = false;
+  if (!hudWindow || hudWindow.isDestroyed()) return;
+  sendHud(false); // triggers the CSS fade-out
+  if (hudHideTimer) clearTimeout(hudHideTimer);
+  hudHideTimer = setTimeout(() => {
+    if (hudWindow && !hudWindow.isDestroyed()) hudWindow.hide();
+    hudHideTimer = null;
+  }, 240);
+}
+
+function sendHud(recording: boolean): void {
+  if (!hudWindow || hudWindow.isDestroyed()) return;
+  hudWindow.webContents.send("hud:update", { recording, level: hudLevel, tentative: hudTentative });
+}
+
+function hudOnLevel(level: number): void {
+  hudLevel = level;
+  const now = Date.now();
+  if (now - lastHudSend < 33) return; // ~30fps cap on level pushes
+  lastHudSend = now;
+  sendHud(true);
+}
+
+function hudOnTentative(text: string): void {
+  hudTentative = text;
+  sendHud(true); // push text changes immediately
+}
+
 // ── Streaming Flow (live word-by-word dictation) ──
 
 let streamToggleBusy = false;
@@ -222,6 +337,7 @@ async function toggleStreaming() {
 async function doToggleStreaming() {
   if (isStreamingActive()) {
     console.log("Stopping streaming session...");
+    hideHud();
     setTrayState("transcribing");
     try {
       const { fullText, durationSecs } = await stopStreamingSession();
@@ -264,6 +380,7 @@ async function doToggleStreaming() {
   try {
     setTrayState("streaming");
     setTimeout(() => updateTrayMenu(), 500);
+    showHud();
     startStreamingSession(
       {
         modelsDir: MODELS_DIR(),
@@ -275,14 +392,14 @@ async function doToggleStreaming() {
         onCommit: (text) => {
           void insertText(text);
         },
-        // onTentative / onLevel drive the Phase 2 HUD; no-ops for now.
-        onTentative: () => {},
-        onLevel: () => {},
+        onTentative: (text) => hudOnTentative(text),
+        onLevel: (level) => hudOnLevel(level),
       },
     );
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("Failed to start streaming:", msg);
+    hideHud();
     setTrayState("idle");
     updateTrayMenu();
   }

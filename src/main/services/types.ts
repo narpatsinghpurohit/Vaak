@@ -22,6 +22,9 @@ export interface Settings {
   historyHotkey: string;
   autoPaste: boolean;
   showNotifications: boolean;
+  // CoreAudio input device NAME to record from. "" = the macOS system default
+  // input. A non-empty value is passed to SoX via the AUDIODEV env var.
+  inputDevice: string;
   // "batch": record → stop → transcribe whole clip → paste (the classic flow).
   // "streaming": transcribe live word-by-word into the focused input as you speak.
   mode: "batch" | "streaming";
@@ -43,6 +46,7 @@ export const DEFAULT_SETTINGS: Settings = {
   historyHotkey: "CommandOrControl+Shift+H",
   autoPaste: false,
   showNotifications: true,
+  inputDevice: "",
   mode: "streaming",
   streaming: {
     stepMs: 800,
@@ -50,6 +54,15 @@ export const DEFAULT_SETTINGS: Settings = {
     pauseFlushMs: 700,
   },
 };
+
+export interface InputDevice {
+  /** CoreAudio device name, used verbatim as SoX's AUDIODEV. */
+  name: string;
+  /** True if this is the current macOS default input device. */
+  isDefault: boolean;
+  /** Short transport hint (e.g. "usb", "builtin", "virtual"), if known. */
+  transport?: string;
+}
 
 export interface HistoryEntry {
   id: number;

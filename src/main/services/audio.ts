@@ -1,11 +1,86 @@
-import { spawn, type ChildProcess } from "child_process";
+import { spawn, execFile, type ChildProcess } from "child_process";
 import { tmpdir } from "os";
 import { join } from "path";
 import { readFileSync, unlinkSync, existsSync } from "fs";
+import type { InputDevice } from "./types";
 
 let recordProcess: ChildProcess | null = null;
 let recordingPath: string | null = null;
 let recordingStartTime: number = 0;
+
+// ── Input device selection ──
+// "" = the macOS system default input. A non-empty value is a CoreAudio device
+// NAME (exactly as CoreAudio / `system_profiler` report it). SoX's `rec` reads
+// the AUDIODEV env var to override its default `-d` device, matching by name —
+// so selecting a mic is purely an env-var change shared by both capture paths.
+let inputDevice = "";
+
+export function setInputDevice(name: string): void {
+  inputDevice = name || "";
+  console.log(`[audio] input device set to: ${inputDevice || "(system default)"}`);
+}
+
+/** Spawn env for `rec` — adds Homebrew to PATH and AUDIODEV when a mic is chosen. */
+function recEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    // Ensure /opt/homebrew/bin and /usr/local/bin are in PATH for packaged app
+    PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH || "/usr/bin:/bin"}`,
+  };
+  if (inputDevice) env.AUDIODEV = inputDevice;
+  return env;
+}
+
+/**
+ * Enumerate CoreAudio input-capable devices via `system_profiler`. The names
+ * returned match what SoX expects in AUDIODEV. Best-effort: returns [] on any
+ * failure so the UI can fall back to "System default".
+ */
+export function listInputDevices(): Promise<InputDevice[]> {
+  return new Promise((resolve) => {
+    execFile(
+      "system_profiler",
+      ["SPAudioDataType", "-json"],
+      { timeout: 8000, maxBuffer: 8 * 1024 * 1024 },
+      (err, stdout) => {
+        if (err) {
+          console.error("[audio] listInputDevices failed:", err.message);
+          resolve([]);
+          return;
+        }
+        try {
+          const data = JSON.parse(stdout);
+          const out: InputDevice[] = [];
+          const seen = new Set<string>();
+          const walk = (items: any[]): void => {
+            for (const it of items ?? []) {
+              if (Array.isArray(it?._items)) walk(it._items);
+              const name = it?._name;
+              // The input-channel field is present only on input-capable devices.
+              if (name && it.coreaudio_device_input != null && !seen.has(name)) {
+                seen.add(name);
+                const transport =
+                  typeof it.coreaudio_device_transport === "string"
+                    ? it.coreaudio_device_transport.replace("coreaudio_device_type_", "")
+                    : undefined;
+                out.push({
+                  name,
+                  isDefault: it.coreaudio_default_audio_input_device === "spaudio_yes",
+                  transport,
+                });
+              }
+            }
+          };
+          walk(data?.SPAudioDataType ?? []);
+          resolve(out);
+        } catch (e) {
+          console.error("[audio] listInputDevices parse error:", e);
+          resolve([]);
+        }
+      },
+    );
+  });
+}
 
 export function startRecording(): void {
   if (recordProcess) {
@@ -22,11 +97,7 @@ export function startRecording(): void {
 
   recordProcess = spawn("rec", ["-r", "16000", "-c", "1", "-b", "16", recordingPath], {
     stdio: "ignore",
-    env: {
-      ...process.env,
-      // Ensure /opt/homebrew/bin and /usr/local/bin are in PATH for packaged app
-      PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH || "/usr/bin:/bin"}`,
-    },
+    env: recEnv(),
   });
 
   console.log(`[audio] rec PID: ${recordProcess.pid}`);
@@ -115,10 +186,7 @@ export function startStreamingRecording(onPcm: (pcm: Float32Array) => void): voi
     ["-q", "-r", "16000", "-c", "1", "-b", "16", "-t", "raw", "-e", "signed-integer", "-"],
     {
       stdio: ["ignore", "pipe", "ignore"],
-      env: {
-        ...process.env,
-        PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH || "/usr/bin:/bin"}`,
-      },
+      env: recEnv(),
     },
   );
 

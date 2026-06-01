@@ -33,6 +33,75 @@ function buildCombo(e: React.KeyboardEvent): string | null {
   return parts.join("+");
 }
 
+function MicrophoneSection({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (deviceName: string) => void;
+}) {
+  const [devices, setDevices] = React.useState<InputDevice[]>([]);
+  const [loading, setLoading] = React.useState(true);
+
+  const refresh = React.useCallback(() => {
+    setLoading(true);
+    window.voicePaste
+      .listInputDevices()
+      .then((d) => setDevices(d))
+      .catch(() => setDevices([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  React.useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const defaultDev = devices.find((d) => d.isDefault);
+  // A previously-chosen mic that's currently unplugged: keep it selectable so the
+  // setting isn't silently lost, but flag it.
+  const selectedMissing = value !== "" && !loading && !devices.some((d) => d.name === value);
+
+  return (
+    <div className="section">
+      <label>Microphone</label>
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">
+          System default{defaultDev ? ` — ${defaultDev.name}` : ""}
+        </option>
+        {devices.map((d) => (
+          <option key={d.name} value={d.name}>
+            {d.name}
+            {d.transport ? ` (${d.transport})` : ""}
+            {d.isDefault ? " — default" : ""}
+          </option>
+        ))}
+        {selectedMissing && <option value={value}>{value} (not connected)</option>}
+      </select>
+      <div className="hint">
+        Which microphone Vaak records from. “System default” follows your macOS Sound
+        settings.{" "}
+        <a
+          onClick={(e) => {
+            e.preventDefault();
+            refresh();
+          }}
+          style={{ cursor: "pointer", color: "var(--accent)" }}
+        >
+          {loading ? "Refreshing…" : "Refresh list"}
+        </a>
+        {selectedMissing && (
+          <>
+            {" "}
+            <span style={{ color: "var(--danger)" }}>
+              Selected mic isn’t connected — recording falls back to the system default.
+            </span>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface ModelRowProps {
   model: ModelStatus;
   isActive: boolean;
@@ -305,6 +374,12 @@ export function SettingsView({
           )}
         </div>
       </div>
+
+      {/* Microphone */}
+      <MicrophoneSection
+        value={settings.inputDevice}
+        onChange={(name) => onFieldChange((s) => ({ ...s, inputDevice: name }))}
+      />
 
       {/* Provider */}
       <div className="section">

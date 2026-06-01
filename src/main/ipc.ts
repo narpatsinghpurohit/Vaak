@@ -26,6 +26,7 @@ import {
   transcribeLocal,
 } from "./services/local-whisper";
 import { transcribeCloud } from "./services/cloud-whisper";
+import { listInputDevices } from "./services/audio";
 import { wrapPcmAsWav } from "./services/wav";
 import { join } from "path";
 import { existsSync, mkdirSync } from "fs";
@@ -44,6 +45,9 @@ export function registerIpcHandlers(
 
   // ── Settings ──
   ipcMain.handle("settings:get", () => getSettings());
+
+  // ── Audio input devices ──
+  ipcMain.handle("audio:listInputDevices", () => listInputDevices());
 
   // ── Accessibility permission check (for auto-paste) ──
   ipcMain.handle("accessibility:check", () => {

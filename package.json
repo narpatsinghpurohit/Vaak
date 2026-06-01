@@ -1,6 +1,6 @@
 {
   "name": "vaak",
-  "version": "0.3.5",
+  "version": "0.3.7",
   "description": "Vaak — voice to clipboard, instantly",
   "main": "dist/main/index.js",
   "scripts": {

@@ -31,6 +31,12 @@ const api = {
     return () => ipcRenderer.removeListener("modelRuntime:status", handler);
   },
 
+  // Audio input devices
+  listInputDevices: () =>
+    ipcRenderer.invoke("audio:listInputDevices") as Promise<
+      { name: string; isDefault: boolean; transport?: string }[]
+    >,
+
   // Accessibility (for auto-paste)
   checkAccessibility: () => ipcRenderer.invoke("accessibility:check") as Promise<boolean>,
   requestAccessibility: () => ipcRenderer.invoke("accessibility:request") as Promise<boolean>,
@@ -55,6 +61,13 @@ const api = {
     const handler = (_e: any, data: any) => callback(data);
     ipcRenderer.on("models:downloadError", handler);
     return () => ipcRenderer.removeListener("models:downloadError", handler);
+  },
+
+  // Live dictation HUD — main pushes { recording, level, tentative } as you speak.
+  onHudUpdate: (callback: (data: any) => void) => {
+    const handler = (_e: any, data: any) => callback(data);
+    ipcRenderer.on("hud:update", handler);
+    return () => ipcRenderer.removeListener("hud:update", handler);
   },
 };
 
